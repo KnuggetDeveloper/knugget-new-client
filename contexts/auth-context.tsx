@@ -345,6 +345,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // FIXED: Enhanced extension logout notification
   async function notifyExtensionLogout(): Promise<void> {
     try {
+      await authSyncService.clearExtensionAuth()
+      
       await authService.notifyExtensionLogout()
       console.log('✅ Extension notified of logout')
     } catch (error) {

@@ -147,18 +147,22 @@ class AuthSyncService {
     if (!this.chromeAPI) return false
 
     try {
+      // Clear storage
       await Promise.all([
         this.chromeAPI.storage.sync.remove(['knugget_auth']),
         this.chromeAPI.storage.local.remove(['knuggetUserInfo']),
       ])
 
       // Notify extension of logout
-      await this.notifyExtension('KNUGGET_LOGOUT', {})
+      await this.notifyExtension('KNUGGET_LOGOUT', {
+        reason: 'Frontend logout',
+        timestamp: new Date().toISOString()
+      })
 
-      console.log('✅ Extension auth data cleared')
+      console.log('✅ Extension auth data cleared via auth sync service')
       return true
     } catch (error) {
-      console.error('❌ Failed to clear extension auth:', error)
+      console.error('❌ Failed to clear extension auth via sync service:', error)
       return false
     }
   }
@@ -176,16 +180,25 @@ class AuthSyncService {
         return false
       }
 
-      await this.chromeAPI.runtime.sendMessage(extensionId, {
+      // Try to send message with timeout
+      const message = {
         type,
         payload,
         timestamp: new Date().toISOString(),
-      })
+      }
 
+      // Send message with a promise that times out
+      const messagePromise = this.chromeAPI.runtime.sendMessage(extensionId, message)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Extension notification timeout')), 5000)
+      )
+
+      await Promise.race([messagePromise, timeoutPromise])
+      console.log(`✅ Extension notified: ${type}`)
       return true
     } catch (error) {
-      // Extension might not be installed or active - this is ok
-      console.warn('Could not notify extension:', error)
+      // Extension might not be installed or active - this is ok for logout
+      console.warn(`Could not notify extension of ${type}:`, error)
       return false
     }
   }

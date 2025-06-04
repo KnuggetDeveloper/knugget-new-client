@@ -121,12 +121,18 @@ class AuthService {
   async logout(): Promise<ApiResponse<void>> {
     const refreshToken = this.getRefreshToken()
 
+    // Call backend logout API
     const response = await this.makeRequest<void>(AUTH_ENDPOINTS.LOGOUT, {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
     })
 
+    // Clear local auth data
     await this.clearAuthData()
+    
+    // FIXED: Notify extension of logout
+    await this.notifyExtensionLogout()
+    
     return response
   }
 
@@ -191,13 +197,17 @@ class AuthService {
     if (!isBrowser()) return
 
     try {
+      // Clear localStorage
       Object.values(AUTH_STORAGE_KEYS).forEach(key => {
         localStorage.removeItem(key)
       })
 
+      // Clear extension auth
       await this.clearExtensionAuth()
+      
+      console.log('✅ All auth data cleared')
     } catch (error) {
-      console.error('Failed to clear auth data:', error)
+      console.error('❌ Failed to clear auth data:', error)
     }
   }
 
@@ -239,11 +249,15 @@ class AuthService {
     if (!chromeAPI) return
 
     try {
-      await chromeAPI.storage.sync.remove(EXTENSION_STORAGE_KEYS.AUTH_DATA)
-      await chromeAPI.storage.local.remove('knuggetUserInfo')
-      console.log('Extension auth data cleared')
+      // Clear both sync and local storage
+      await Promise.all([
+        chromeAPI.storage.sync.remove(EXTENSION_STORAGE_KEYS.AUTH_DATA),
+        chromeAPI.storage.local.remove('knuggetUserInfo')
+      ])
+      
+      console.log('✅ Extension auth data cleared from frontend')
     } catch (error) {
-      console.error('Failed to clear extension auth:', error)
+      console.error('❌ Failed to clear extension auth from frontend:', error)
     }
   }
 
@@ -276,13 +290,24 @@ class AuthService {
 
     try {
       const extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID
-      if (!extensionId) return
+      if (!extensionId) {
+        console.warn('Chrome extension ID not configured for logout notification')
+        return
+      }
 
+      // Send logout message to extension
       await chromeAPI.runtime.sendMessage(extensionId, {
         type: 'KNUGGET_LOGOUT',
+        payload: {
+          reason: 'Frontend logout',
+          timestamp: new Date().toISOString(),
+        }
       })
+      
+      console.log('✅ Extension notified of logout via runtime message')
     } catch (error) {
-      console.error('Failed to notify extension of logout:', error)
+      console.error('❌ Failed to notify extension of logout:', error)
+      // Don't throw - continue with local logout
     }
   }
 
