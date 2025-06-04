@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_WEBSITE_URL || 'https://knugget-client.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_WEBSITE_URL || 'https://knugget-new-client.vercel.app'),
   alternates: {
     canonical: '/',
   },
@@ -91,7 +91,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 
         {/* DNS Prefetch */}
-        <link rel="dns-prefetch" href="https://knugget-backend.onrender.com" />
+        <link rel="dns-prefetch" href="https://knugget-new-backend.onrender.com" />
 
         {/* Chrome Extension Connection */}
         {process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID && (

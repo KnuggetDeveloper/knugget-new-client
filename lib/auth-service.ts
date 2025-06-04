@@ -45,7 +45,7 @@ class AuthService {
 
   constructor() {
     // FIXED: Use correct backend API URL
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://knugget-backend.onrender.com/api'
+    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://knugget-new-backend.onrender.com/api'
   }
 
   private async makeRequest<T>(

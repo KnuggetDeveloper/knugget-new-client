@@ -119,7 +119,7 @@ export function getApiBaseUrl(): string {
  * Get website base URL
  */
 export function getWebsiteUrl(): string {
-  return process.env.NEXT_PUBLIC_WEBSITE_URL || 'https://knugget-client.vercel.app'
+  return process.env.NEXT_PUBLIC_WEBSITE_URL || 'https://knugget-new-client.vercel.app'
 }
 
 /**
