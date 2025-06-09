@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormControl, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { authSyncService } from '@/lib/auth-sync'
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Please enter a valid email address'),
@@ -57,7 +58,7 @@ function LoginPageContent() {
     try {
       await login(data.email, data.password)
 
-      // CRITICAL FIX: Notify Chrome extension after successful login
+      // Enhanced extension notification after successful login
       if (isFromExtension && extensionId) {
         await notifyExtensionAuthSuccess(extensionId)
       }
@@ -66,50 +67,124 @@ function LoginPageContent() {
     }
   }
 
-  // CRITICAL FIX: Function to notify extension of successful auth
+  // Enhanced function to notify extension of successful auth
   const notifyExtensionAuthSuccess = async (extensionId: string) => {
+    console.log('🔄 Starting extension auth notification...')
+    console.log('Extension ID:', extensionId)
+    console.log('Chrome available:', typeof chrome !== 'undefined')
+    console.log('Chrome storage available:', typeof chrome !== 'undefined' && !!chrome?.storage)
+    console.log('Chrome runtime available:', typeof chrome !== 'undefined' && !!chrome?.runtime)
+    
     try {
-      // Get current auth data
-      const accessToken = localStorage.getItem('sb-access-token') || localStorage.getItem('knugget_access_token')
-      const refreshToken = localStorage.getItem('sb-refresh-token') || localStorage.getItem('knugget_refresh_token')
+      // Get current auth data from localStorage
+      const accessToken = localStorage.getItem('knugget_access_token')
+      const refreshToken = localStorage.getItem('knugget_refresh_token')
       const userData = localStorage.getItem('knugget_user_data')
+      const expiresAt = localStorage.getItem('knugget_expires_at')
+
+      console.log('Auth data available:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        hasUserData: !!userData,
+        hasExpiresAt: !!expiresAt
+      })
 
       if (!accessToken || !userData) {
         console.warn('Missing auth data for extension sync')
+        showInfoMessage('Login successful! Extension sync will happen automatically.')
         return
       }
 
       const user = JSON.parse(userData)
 
-      // Send message to extension
-      if (chrome?.runtime?.sendMessage) {
-        await chrome.runtime.sendMessage(extensionId, {
-          type: 'KNUGGET_AUTH_SUCCESS',
-          payload: {
-            accessToken,
-            refreshToken,
-            user: {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              credits: user.credits || 10,
-              plan: user.plan || 'FREE',
-            },
-            expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-          },
-        })
+      // Use authSyncService for proper extension sync
+      console.log('🔄 Calling authSyncService.syncAuthSuccess...')
+      const syncSuccess = await authSyncService.syncAuthSuccess({
+        user: user,
+        accessToken: accessToken,
+        refreshToken: refreshToken || '',
+        expiresAt: parseInt(expiresAt || '0')
+      })
 
-        console.log('✅ Successfully notified extension of auth success')
-
-        // Show success message and redirect
+      if (syncSuccess) {
+        console.log('✅ Successfully synced auth to extension')
+        showSuccessMessage('Successfully signed in and synced with Chrome extension!')
+        
+        // Close the tab after a delay (if opened by extension)
         setTimeout(() => {
-          window.close() // Close the login tab if opened by extension
+          if (isFromExtension) {
+            window.close()
+          }
         }, 2000)
+      } else {
+        console.log('❌ Failed to sync auth to extension')
+        showInfoMessage('Login successful! Extension sync will happen when you visit YouTube.')
       }
+
     } catch (error) {
-      console.error('❌ Failed to notify extension:', error)
-      // Continue with normal flow even if extension notification fails
+      console.error('❌ Extension sync failed:', error)
+      showInfoMessage('Login successful! Extension sync will happen automatically.')
     }
+  }
+
+  const showSuccessMessage = (message: string) => {
+    // Create a success notification
+    const notification = document.createElement('div')
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #10b981;
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      max-width: 350px;
+      line-height: 1.4;
+    `
+    notification.textContent = message
+    
+    document.body.appendChild(notification)
+    
+    // Remove notification after 4 seconds
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification)
+      }
+    }, 4000)
+  }
+
+  const showInfoMessage = (message: string) => {
+    // Create an info notification
+    const notification = document.createElement('div')
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #3b82f6;
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      max-width: 350px;
+      line-height: 1.4;
+    `
+    notification.textContent = message
+    
+    document.body.appendChild(notification)
+    
+    // Remove notification after 5 seconds
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification)
+      }
+    }, 5000)
   }
 
   if (authLoading) {

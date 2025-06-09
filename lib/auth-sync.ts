@@ -1,37 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// lib/auth-sync.ts
+// lib/auth-sync.ts - Enhanced and simplified auth sync service
 import { User, ExtensionAuthData } from '@/types/auth'
 
 interface ChromeAPI {
-  storage: {
-    sync: {
-      set: (items: Record<string, any>) => Promise<void>
-      get: (keys: string | string[] | null) => Promise<Record<string, any>>
-      remove: (keys: string | string[]) => Promise<void>
-    }
-    local: {
-      set: (items: Record<string, any>) => Promise<void>
-      get: (keys: string | string[] | null) => Promise<Record<string, any>>
-      remove: (keys: string | string[]) => Promise<void>
-    }
-    onChanged: {
-      addListener: (callback: (changes: Record<string, any>, namespace: string) => void) => void
-      removeListener: (callback: (changes: Record<string, any>, namespace: string) => void) => void
-    }
-  }
+  storage: any
   runtime: {
     sendMessage: (extensionId: string, message: any) => Promise<any>
-    onMessage: {
+    onMessage?: {
       addListener: (callback: (message: any, sender: any, sendResponse: any) => void) => void
-      removeListener: (callback: (message: any, sender: any, sendResponse: any) => void) => void
     }
   }
 }
 
-// Type guard for Chrome API
+// Type guard for Chrome API (only need runtime for message passing)
 function getChromeAPI(): ChromeAPI | null {
   if (typeof window === 'undefined') return null
-  if (typeof chrome === 'undefined' || !chrome?.storage) return null
+  if (typeof chrome === 'undefined') return null
+  if (!chrome.runtime) return null
+  // Note: We don't need chrome.storage for web pages - only runtime for messaging
   return chrome as unknown as ChromeAPI
 }
 
@@ -44,11 +30,11 @@ interface WebAuthData {
 
 class AuthSyncService {
   private chromeAPI: ChromeAPI | null = null
-  private storageChangeListener: ((changes: Record<string, any>, namespace: string) => void) | null = null
-  private messageListener: ((message: any, sender: any, sendResponse: any) => void) | null = null
+  private extensionId: string | null = null
 
   constructor() {
     this.chromeAPI = getChromeAPI()
+    this.extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID || null
     this.setupListeners()
   }
 
@@ -56,22 +42,38 @@ class AuthSyncService {
    * Check if Chrome extension API is available
    */
   async isExtensionAvailable(): Promise<boolean> {
-    if (!this.chromeAPI) return false
+    if (!this.chromeAPI || !this.extensionId) {
+      console.log('ℹ️ Chrome runtime API or Extension ID not available')
+      return false
+    }
     
     try {
-      // Try to access storage to verify extension is available
-      await this.chromeAPI.storage.sync.get(null)
+      // Try to ping the extension directly
+      const response = await this.chromeAPI.runtime.sendMessage(this.extensionId, {
+        type: 'KNUGGET_CHECK_AUTH',
+        timestamp: new Date().toISOString()
+      })
+      console.log('✅ Extension is available and responding:', response)
       return true
-    } catch {
+    } catch (error) {
+      console.log('ℹ️ Extension not responding:', error)
       return false
     }
   }
 
   /**
-   * Sync authentication data to Chrome extension
+   * Sync authentication success to Chrome extension
    */
-  async syncToExtension(authData: WebAuthData): Promise<boolean> {
-    if (!this.chromeAPI) return false
+  async syncAuthSuccess(authData: WebAuthData): Promise<boolean> {
+    if (!this.chromeAPI) {
+      console.log('ℹ️ Chrome API not available - extension not installed')
+      return false
+    }
+
+    if (!this.extensionId) {
+      console.log('ℹ️ Extension ID not configured')
+      return false
+    }
 
     try {
       const extensionAuthData: ExtensionAuthData = {
@@ -88,74 +90,121 @@ class AuthSyncService {
         loginTime: new Date().toISOString(),
       }
 
-      // Store in Chrome sync storage
-      await this.chromeAPI.storage.sync.set({
-        knugget_auth: extensionAuthData,
-      })
+      // Try to send message to extension first (this will fail if extension isn't installed)
+      try {
+        await this.chromeAPI.runtime.sendMessage(this.extensionId, {
+          type: 'KNUGGET_AUTH_SUCCESS',
+          payload: {
+            accessToken: authData.accessToken,
+            refreshToken: authData.refreshToken,
+            user: authData.user,
+            expiresAt: authData.expiresAt,
+          },
+          timestamp: new Date().toISOString()
+        })
+        console.log('✅ Extension message sent successfully')
+      } catch (messageError) {
+        console.log('ℹ️ Extension not responding to message (may not be installed):', messageError)
+        // Continue with storage sync even if message fails
+      }
 
-      // Also store in local storage for immediate access
-      await this.chromeAPI.storage.local.set({
-        knuggetUserInfo: extensionAuthData,
-      })
+      // Try to store in Chrome storage (this may also fail if extension isn't installed)
+      try {
+        await Promise.all([
+          this.chromeAPI.storage.sync.set({ knugget_auth: extensionAuthData }),
+          this.chromeAPI.storage.local.set({ knuggetUserInfo: extensionAuthData })
+        ])
+        console.log('✅ Auth data stored in extension storage')
+      } catch (storageError) {
+        console.log('ℹ️ Failed to store in extension storage (extension may not be installed):', storageError)
+        return false
+      }
 
-      // Notify extension of auth success
-      await this.notifyExtension('KNUGGET_AUTH_SUCCESS', {
-        token: authData.accessToken,
-        refreshToken: authData.refreshToken,
-        user: authData.user,
-        expiresAt: authData.expiresAt,
-      })
-
-      console.log('✅ Auth data synced to Chrome extension')
+      console.log('✅ Auth success synced to extension')
       return true
     } catch (error) {
-      console.error('❌ Failed to sync auth data to extension:', error)
+      console.log('ℹ️ Extension sync failed (extension may not be installed):', error)
       return false
     }
   }
 
   /**
-   * Get authentication data from Chrome extension
+   * Sync logout to Chrome extension
    */
-  async getExtensionAuthData(): Promise<ExtensionAuthData | null> {
-    if (!this.chromeAPI) return null
+  async syncLogout(): Promise<boolean> {
+    console.log('🔄 Attempting to sync logout to extension...')
+    
+    if (!this.chromeAPI) {
+      console.log('ℹ️ Chrome runtime API not available')
+      return false
+    }
+
+    if (!this.extensionId) {
+      console.log('ℹ️ Extension ID not configured')
+      return false
+    }
 
     try {
-      // Try sync storage first
-      const syncResult = await this.chromeAPI.storage.sync.get(['knugget_auth'])
-      if (syncResult.knugget_auth) {
-        return syncResult.knugget_auth as ExtensionAuthData
-      }
+      console.log('📤 Sending logout message to extension:', this.extensionId)
 
-      // Fallback to local storage
-      const localResult = await this.chromeAPI.storage.local.get(['knuggetUserInfo'])
-      if (localResult.knuggetUserInfo) {
-        return localResult.knuggetUserInfo as ExtensionAuthData
-      }
+      // Send logout message to extension background script
+      const response = await this.chromeAPI.runtime.sendMessage(this.extensionId, {
+        type: 'KNUGGET_LOGOUT',
+        timestamp: new Date().toISOString()
+      })
 
-      return null
+      console.log('✅ Extension responded to logout:', response)
+      return true
     } catch (error) {
-      console.error('Failed to get extension auth data:', error)
-      return null
+      console.error('❌ Failed to sync logout to extension:', error)
+      return false
     }
   }
 
   /**
-   * Clear authentication data from Chrome extension
+   * Initialize auth from extension on page load
+   */
+  async initializeFromExtension(): Promise<{ user: User | null; isAuthenticated: boolean }> {
+    // First check localStorage (web pages can only access their own localStorage)
+    const localUser = this.getCurrentUser()
+    const isLocalValid = localUser && this.isTokenValid()
+
+    if (isLocalValid) {
+      return { user: localUser, isAuthenticated: true }
+    }
+
+    // If local auth is invalid, try to get auth from extension via message
+    try {
+      if (this.chromeAPI && this.extensionId) {
+        const response = await this.chromeAPI.runtime.sendMessage(this.extensionId, {
+          type: 'KNUGGET_CHECK_AUTH',
+          timestamp: new Date().toISOString()
+        })
+        
+        if (response && response.isAuthenticated && response.user) {
+          // Convert extension user format and store locally
+          const user = this.convertExtensionUser(response.user)
+          return { user, isAuthenticated: true }
+        }
+      }
+    } catch (error) {
+      console.log('ℹ️ Could not get auth from extension:', error)
+    }
+
+    return { user: null, isAuthenticated: false }
+  }
+
+  /**
+   * Clear extension auth data (via message)
    */
   async clearExtensionAuth(): Promise<boolean> {
-    if (!this.chromeAPI) return false
+    if (!this.chromeAPI || !this.extensionId) return false
 
     try {
-      await Promise.all([
-        this.chromeAPI.storage.sync.remove(['knugget_auth']),
-        this.chromeAPI.storage.local.remove(['knuggetUserInfo']),
-      ])
-
-      // Notify extension of logout
-      await this.notifyExtension('KNUGGET_LOGOUT', {})
-
-      console.log('✅ Extension auth data cleared')
+      await this.chromeAPI.runtime.sendMessage(this.extensionId, {
+        type: 'KNUGGET_LOGOUT',
+        timestamp: new Date().toISOString()
+      })
       return true
     } catch (error) {
       console.error('❌ Failed to clear extension auth:', error)
@@ -164,105 +213,36 @@ class AuthSyncService {
   }
 
   /**
-   * Send message to Chrome extension
-   */
-  private async notifyExtension(type: string, payload: any): Promise<boolean> {
-    if (!this.chromeAPI) return false
-
-    try {
-      const extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID
-      if (!extensionId) {
-        console.warn('Chrome extension ID not configured')
-        return false
-      }
-
-      await this.chromeAPI.runtime.sendMessage(extensionId, {
-        type,
-        payload,
-        timestamp: new Date().toISOString(),
-      })
-
-      return true
-    } catch (error) {
-      // Extension might not be installed or active - this is ok
-      console.warn('Could not notify extension:', error)
-      return false
-    }
-  }
-
-  /**
-   * Set up listeners for Chrome extension changes
+   * Setup listeners for extension auth changes (via message events)
    */
   private setupListeners(): void {
     if (!this.chromeAPI) return
 
-    // Listen for storage changes from extension
-    this.storageChangeListener = (changes: Record<string, any>, namespace: string) => {
-      if (namespace === 'sync' && changes.knugget_auth) {
-        const change = changes.knugget_auth
-
-        if (change.newValue) {
-          // Extension logged in
-          const authData = change.newValue as ExtensionAuthData
-          window.dispatchEvent(new CustomEvent('extensionAuthChange', {
-            detail: { 
-              isAuthenticated: true, 
-              user: this.convertExtensionUser(authData.user),
-              timestamp: new Date().toISOString() 
-            }
-          }))
-        } else if (change.oldValue && !change.newValue) {
-          // Extension logged out
-          window.dispatchEvent(new CustomEvent('extensionAuthChange', {
-            detail: { 
-              isAuthenticated: false, 
-              user: null,
-              timestamp: new Date().toISOString() 
-            }
-          }))
+    // Listen for messages from extension (this is how extensions communicate with web pages)
+    if (this.chromeAPI.runtime && this.chromeAPI.runtime.onMessage) {
+      this.chromeAPI.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
+        if (message.type === 'KNUGGET_AUTH_CHANGED') {
+          if (message.data?.isAuthenticated && message.data?.user) {
+            // Extension logged in
+            window.dispatchEvent(new CustomEvent('extensionAuthChange', {
+              detail: { 
+                isAuthenticated: true, 
+                user: this.convertExtensionUser(message.data.user),
+                timestamp: new Date().toISOString() 
+              }
+            }))
+          } else {
+            // Extension logged out
+            window.dispatchEvent(new CustomEvent('extensionAuthChange', {
+              detail: { 
+                isAuthenticated: false, 
+                user: null,
+                timestamp: new Date().toISOString() 
+              }
+            }))
+          }
+          sendResponse({ received: true })
         }
-      }
-    }
-
-    this.chromeAPI.storage.onChanged.addListener(this.storageChangeListener)
-
-    // Listen for messages from extension
-    this.messageListener = (message: any, sender: any, sendResponse: any) => {
-      if (message.type === 'KNUGGET_CHECK_AUTH') {
-        // Extension is checking auth status
-        const user = this.getCurrentUser()
-        const isAuthenticated = !!user && this.isTokenValid()
-        
-        sendResponse({
-          isAuthenticated,
-          user,
-          timestamp: new Date().toISOString(),
-        })
-      } else if (message.type === 'KNUGGET_SYNC_REQUEST') {
-        // Extension is requesting auth sync
-        this.handleSyncRequest()
-        sendResponse({ success: true })
-      }
-    }
-
-    this.chromeAPI.runtime.onMessage.addListener(this.messageListener)
-  }
-
-  /**
-   * Handle sync request from extension
-   */
-  private async handleSyncRequest(): Promise<void> {
-    const user = this.getCurrentUser()
-    const accessToken = localStorage.getItem('knugget_access_token')
-    const refreshToken = localStorage.getItem('knugget_refresh_token')
-    const expiresAt = localStorage.getItem('knugget_expires_at')
-
-    if (user && accessToken && refreshToken && expiresAt && this.isTokenValid()) {
-      await this.syncToExtension({
-        user,
-        accessToken,
-        refreshToken,
-        expiresAt: parseInt(expiresAt),
       })
     }
   }
@@ -300,68 +280,17 @@ class AuthSyncService {
   /**
    * Convert extension user format to web user format
    */
-  private convertExtensionUser(extUser: ExtensionAuthData['user']): User {
+  private convertExtensionUser(extUser: any): User {
     return {
       id: extUser.id,
       email: extUser.email,
       name: extUser.name,
       avatar: null,
-      plan: extUser.plan.toUpperCase() as 'FREE' | 'PREMIUM',
-      credits: extUser.credits,
+      plan: extUser.plan?.toUpperCase() as 'FREE' | 'PREMIUM' || 'FREE',
+      credits: extUser.credits || 0,
       emailVerified: true,
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
-    }
-  }
-
-  /**
-   * Initialize auth from extension on page load
-   */
-  async initializeFromExtension(): Promise<{ user: User | null; isAuthenticated: boolean }> {
-    // First check localStorage
-    const localUser = this.getCurrentUser()
-    const isLocalValid = localUser && this.isTokenValid()
-
-    if (isLocalValid) {
-      return { user: localUser, isAuthenticated: true }
-    }
-
-    // If local auth is invalid, try extension
-    const extensionAuth = await this.getExtensionAuthData()
-    
-    if (extensionAuth && extensionAuth.user && extensionAuth.token) {
-      // Check if extension token is valid
-      const isExtensionValid = extensionAuth.expiresAt > Date.now()
-      
-      if (isExtensionValid) {
-        // Sync extension auth to localStorage
-        localStorage.setItem('knugget_access_token', extensionAuth.token)
-        localStorage.setItem('knugget_refresh_token', extensionAuth.refreshToken)
-        localStorage.setItem('knugget_expires_at', extensionAuth.expiresAt.toString())
-        localStorage.setItem('knugget_user_data', JSON.stringify(this.convertExtensionUser(extensionAuth.user)))
-
-        return { 
-          user: this.convertExtensionUser(extensionAuth.user), 
-          isAuthenticated: true 
-        }
-      }
-    }
-
-    return { user: null, isAuthenticated: false }
-  }
-
-  /**
-   * Clean up listeners
-   */
-  cleanup(): void {
-    if (!this.chromeAPI) return
-
-    if (this.storageChangeListener) {
-      this.chromeAPI.storage.onChanged.removeListener(this.storageChangeListener)
-    }
-
-    if (this.messageListener) {
-      this.chromeAPI.runtime.onMessage.removeListener(this.messageListener)
     }
   }
 }
