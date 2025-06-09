@@ -32,6 +32,7 @@ function LoginPageContent() {
 
   const returnUrl = searchParams.get('returnUrl')
   const source = searchParams.get('source')
+  const extensionId = searchParams.get('extensionId')
   const isFromExtension = source === 'extension'
 
   const form = useForm<LoginFormData>({
@@ -56,15 +57,58 @@ function LoginPageContent() {
     try {
       await login(data.email, data.password)
 
-      // Extension sync is now handled automatically by the auth service
-      if (isFromExtension) {
+      // CRITICAL FIX: Notify Chrome extension after successful login
+      if (isFromExtension && extensionId) {
+        await notifyExtensionAuthSuccess(extensionId)
+      }
+    } catch (err) {
+      console.error('Login error:', err)
+    }
+  }
+
+  // CRITICAL FIX: Function to notify extension of successful auth
+  const notifyExtensionAuthSuccess = async (extensionId: string) => {
+    try {
+      // Get current auth data
+      const accessToken = localStorage.getItem('sb-access-token') || localStorage.getItem('knugget_access_token')
+      const refreshToken = localStorage.getItem('sb-refresh-token') || localStorage.getItem('knugget_refresh_token')
+      const userData = localStorage.getItem('knugget_user_data')
+
+      if (!accessToken || !userData) {
+        console.warn('Missing auth data for extension sync')
+        return
+      }
+
+      const user = JSON.parse(userData)
+
+      // Send message to extension
+      if (chrome?.runtime?.sendMessage) {
+        await chrome.runtime.sendMessage(extensionId, {
+          type: 'KNUGGET_AUTH_SUCCESS',
+          payload: {
+            accessToken,
+            refreshToken,
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              credits: user.credits || 10,
+              plan: user.plan || 'FREE',
+            },
+            expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+          },
+        })
+
+        console.log('✅ Successfully notified extension of auth success')
+
         // Show success message and redirect
         setTimeout(() => {
           window.close() // Close the login tab if opened by extension
         }, 2000)
       }
-    } catch (err) {
-      console.error('Login error:', err)
+    } catch (error) {
+      console.error('❌ Failed to notify extension:', error)
+      // Continue with normal flow even if extension notification fails
     }
   }
 

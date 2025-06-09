@@ -6,15 +6,46 @@ import {
   ApiResponse,
   LoginResponse,
   AUTH_STORAGE_KEYS,
+  EXTENSION_STORAGE_KEYS,
+  AUTH_ENDPOINTS,
+  ExtensionAuthData,
 } from '@/types/auth'
 import { isBrowser } from '@/lib/utils'
-import { authSyncService } from '@/lib/auth-sync'
+
+// Type for Chrome extension API
+interface ChromeAPI {
+  storage: {
+    sync: {
+      set: (items: Record<string, any>) => Promise<void>
+      remove: (keys: string | string[]) => Promise<void>
+    }
+    local: {
+      set: (items: Record<string, any>) => Promise<void>
+      remove: (keys: string | string[]) => Promise<void>
+    }
+    onChanged: {
+      addListener: (callback: (changes: Record<string, any>, namespace: string) => void) => void
+    }
+  }
+  runtime: {
+    sendMessage: (extensionId: string, message: any) => Promise<any>
+  }
+}
+
+function getChromeAPI(): ChromeAPI | null {
+  if (typeof chrome !== 'undefined' && chrome?.storage) {
+    return chrome as unknown as ChromeAPI
+  }
+  return null
+}
+
 
 class AuthService {
   private baseUrl: string
 
   constructor() {
-    this.baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+    // FIXED: Use correct backend API URL
+    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://knugget-backend.onrender.com/api'
   }
 
   private async makeRequest<T>(
@@ -23,32 +54,34 @@ class AuthService {
   ): Promise<ApiResponse<T>> {
     try {
       const url = `${this.baseUrl}${endpoint}`
+      const token = this.getAccessToken()
+
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': window.location.origin,
+          ...(token && { Authorization: `Bearer ${token}` }),
           ...options.headers,
         },
+        credentials: 'include',
+        mode: 'cors',
         ...options,
       })
 
-      let data: any
-      try {
-        data = await response.json()
-      } catch {
-        data = null
-      }
-
       if (!response.ok) {
-        const message = data?.message || data?.error || `HTTP ${response.status}`
+        const data = await response.json().catch(() => ({}));
         return {
           success: false,
-          error: message,
+          error: data.error || `HTTP ${response.status}: ${response.statusText}`,
         }
       }
 
+      const data = await response.json()
       return {
         success: true,
-        data: data || undefined,
+        data: data.data || data,
+        message: data.message,
       }
     } catch (error) {
       console.error('API request failed:', error)
@@ -60,51 +93,40 @@ class AuthService {
   }
 
   async login(credentials: LoginRequest): Promise<ApiResponse<LoginResponse>> {
-    const response = await this.makeRequest<LoginResponse>('/auth/login', {
+    const response = await this.makeRequest<LoginResponse>(AUTH_ENDPOINTS.LOGIN, {
       method: 'POST',
       body: JSON.stringify(credentials),
     })
 
     if (response.success && response.data) {
       await this.setAuthData(response.data)
-      // Sync to extension using unified sync service
-      await authSyncService.syncAuthToExtension(response.data)
     }
 
     return response
   }
 
   async register(userData: RegisterRequest): Promise<ApiResponse<LoginResponse>> {
-    const response = await this.makeRequest<LoginResponse>('/auth/register', {
+    const response = await this.makeRequest<LoginResponse>(AUTH_ENDPOINTS.REGISTER, {
       method: 'POST',
       body: JSON.stringify(userData),
     })
 
     if (response.success && response.data) {
       await this.setAuthData(response.data)
-      // Sync to extension using unified sync service
-      await authSyncService.syncAuthToExtension(response.data)
     }
 
     return response
   }
 
   async logout(): Promise<ApiResponse<void>> {
-    const token = this.getAccessToken()
+    const refreshToken = this.getRefreshToken()
 
-    // Call logout API if we have a token
-    let response: ApiResponse<void> = { success: true }
-    if (token) {
-      response = await this.makeRequest<void>('/auth/logout', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    }
+    const response = await this.makeRequest<void>(AUTH_ENDPOINTS.LOGOUT, {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    })
 
-    // Always clear auth data locally and sync to extension
     await this.clearAuthData()
-    await authSyncService.syncLogoutToExtension('Client logout')
-
     return response
   }
 
@@ -118,49 +140,33 @@ class AuthService {
       }
     }
 
-    const response = await this.makeRequest<LoginResponse>('/auth/refresh', {
+    const response = await this.makeRequest<LoginResponse>(AUTH_ENDPOINTS.REFRESH, {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
     })
 
     if (response.success && response.data) {
       await this.setAuthData(response.data)
-      // Sync refreshed auth to extension
-      await authSyncService.syncAuthToExtension(response.data)
     } else {
-      // If refresh fails, clear auth data
       await this.clearAuthData()
-      await authSyncService.syncLogoutToExtension('Token refresh failed')
     }
 
     return response
   }
 
   async getCurrentUser(): Promise<ApiResponse<User>> {
-    const token = this.getAccessToken()
-
-    if (!token) {
-      return {
-        success: false,
-        error: 'No access token available',
-      }
-    }
-
-    return this.makeRequest<User>('/auth/me', {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    return this.makeRequest<User>(AUTH_ENDPOINTS.ME)
   }
 
   async forgotPassword(email: string): Promise<ApiResponse<void>> {
-    return this.makeRequest<void>('/auth/forgot-password', {
+    return this.makeRequest<void>(AUTH_ENDPOINTS.FORGOT_PASSWORD, {
       method: 'POST',
       body: JSON.stringify({ email }),
     })
   }
 
   async resetPassword(token: string, password: string): Promise<ApiResponse<void>> {
-    return this.makeRequest<void>('/auth/reset-password', {
+    return this.makeRequest<void>(AUTH_ENDPOINTS.RESET_PASSWORD, {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     })
@@ -175,9 +181,9 @@ class AuthService {
       localStorage.setItem(AUTH_STORAGE_KEYS.USER_DATA, JSON.stringify(authData.user))
       localStorage.setItem(AUTH_STORAGE_KEYS.EXPIRES_AT, authData.expiresAt.toString())
 
-      console.log('✅ Auth data stored successfully')
+      await this.syncWithExtension(authData)
     } catch (error) {
-      console.error('❌ Failed to set auth data:', error)
+      console.error('Failed to set auth data:', error)
     }
   }
 
@@ -185,14 +191,98 @@ class AuthService {
     if (!isBrowser()) return
 
     try {
-      // Clear localStorage
       Object.values(AUTH_STORAGE_KEYS).forEach(key => {
         localStorage.removeItem(key)
       })
 
-      console.log('✅ Local auth data cleared')
+      await this.clearExtensionAuth()
     } catch (error) {
-      console.error('❌ Failed to clear auth data:', error)
+      console.error('Failed to clear auth data:', error)
+    }
+  }
+
+  private async syncWithExtension(authData: LoginResponse): Promise<void> {
+    const chromeAPI = getChromeAPI()
+    if (!chromeAPI) return
+
+    try {
+      const extensionAuthData: ExtensionAuthData = {
+        token: authData.accessToken,
+        refreshToken: authData.refreshToken,
+        user: {
+          id: authData.user.id,
+          name: authData.user.name,
+          email: authData.user.email,
+          credits: authData.user.credits,
+          plan: authData.user.plan.toLowerCase(),
+        },
+        expiresAt: authData.expiresAt,
+        loginTime: new Date().toISOString(),
+      }
+
+      await chromeAPI.storage.sync.set({
+        [EXTENSION_STORAGE_KEYS.AUTH_DATA]: extensionAuthData,
+      })
+
+      await chromeAPI.storage.local.set({
+        knuggetUserInfo: extensionAuthData,
+      })
+
+      console.log('Auth data synced with Chrome extension')
+    } catch (error) {
+      console.error('Failed to sync with Chrome extension:', error)
+    }
+  }
+
+  private async clearExtensionAuth(): Promise<void> {
+    const chromeAPI = getChromeAPI()
+    if (!chromeAPI) return
+
+    try {
+      await chromeAPI.storage.sync.remove(EXTENSION_STORAGE_KEYS.AUTH_DATA)
+      await chromeAPI.storage.local.remove('knuggetUserInfo')
+      console.log('Extension auth data cleared')
+    } catch (error) {
+      console.error('Failed to clear extension auth:', error)
+    }
+  }
+
+  // FIXED: Notification methods for extension sync
+  async notifyExtensionAuthSuccess(authData: LoginResponse): Promise<void> {
+    const chromeAPI = getChromeAPI()
+    if (!chromeAPI) return
+
+    try {
+      const extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID
+      if (!extensionId) return
+
+      await chromeAPI.runtime.sendMessage(extensionId, {
+        type: 'KNUGGET_AUTH_SUCCESS',
+        payload: {
+          token: authData.accessToken,
+          refreshToken: authData.refreshToken,
+          user: authData.user,
+          expiresAt: authData.expiresAt,
+        },
+      })
+    } catch (error) {
+      console.error('Failed to notify extension of auth success:', error)
+    }
+  }
+
+  async notifyExtensionLogout(): Promise<void> {
+    const chromeAPI = getChromeAPI()
+    if (!chromeAPI) return
+
+    try {
+      const extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID
+      if (!extensionId) return
+
+      await chromeAPI.runtime.sendMessage(extensionId, {
+        type: 'KNUGGET_LOGOUT',
+      })
+    } catch (error) {
+      console.error('Failed to notify extension of logout:', error)
     }
   }
 
