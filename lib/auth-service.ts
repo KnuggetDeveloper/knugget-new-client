@@ -6,46 +6,15 @@ import {
   ApiResponse,
   LoginResponse,
   AUTH_STORAGE_KEYS,
-  EXTENSION_STORAGE_KEYS,
-  AUTH_ENDPOINTS,
-  ExtensionAuthData,
 } from '@/types/auth'
 import { isBrowser } from '@/lib/utils'
-
-// Type for Chrome extension API
-interface ChromeAPI {
-  storage: {
-    sync: {
-      set: (items: Record<string, any>) => Promise<void>
-      remove: (keys: string | string[]) => Promise<void>
-    }
-    local: {
-      set: (items: Record<string, any>) => Promise<void>
-      remove: (keys: string | string[]) => Promise<void>
-    }
-    onChanged: {
-      addListener: (callback: (changes: Record<string, any>, namespace: string) => void) => void
-    }
-  }
-  runtime: {
-    sendMessage: (extensionId: string, message: any) => Promise<any>
-  }
-}
-
-function getChromeAPI(): ChromeAPI | null {
-  if (typeof chrome !== 'undefined' && chrome?.storage) {
-    return chrome as unknown as ChromeAPI
-  }
-  return null
-}
-
+import { authSyncService } from '@/lib/auth-sync'
 
 class AuthService {
   private baseUrl: string
 
   constructor() {
-    // FIXED: Use correct backend API URL
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://knugget-new-backend.onrender.com/api'
+    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   }
 
   private async makeRequest<T>(
@@ -54,34 +23,32 @@ class AuthService {
   ): Promise<ApiResponse<T>> {
     try {
       const url = `${this.baseUrl}${endpoint}`
-      const token = this.getAccessToken()
-
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Origin': window.location.origin,
-          ...(token && { Authorization: `Bearer ${token}` }),
           ...options.headers,
         },
-        credentials: 'include',
-        mode: 'cors',
         ...options,
       })
 
+      let data: any
+      try {
+        data = await response.json()
+      } catch {
+        data = null
+      }
+
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
+        const message = data?.message || data?.error || `HTTP ${response.status}`
         return {
           success: false,
-          error: data.error || `HTTP ${response.status}: ${response.statusText}`,
+          error: message,
         }
       }
 
-      const data = await response.json()
       return {
         success: true,
-        data: data.data || data,
-        message: data.message,
+        data: data || undefined,
       }
     } catch (error) {
       console.error('API request failed:', error)
@@ -93,46 +60,51 @@ class AuthService {
   }
 
   async login(credentials: LoginRequest): Promise<ApiResponse<LoginResponse>> {
-    const response = await this.makeRequest<LoginResponse>(AUTH_ENDPOINTS.LOGIN, {
+    const response = await this.makeRequest<LoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     })
 
     if (response.success && response.data) {
       await this.setAuthData(response.data)
+      // Sync to extension using unified sync service
+      await authSyncService.syncAuthToExtension(response.data)
     }
 
     return response
   }
 
   async register(userData: RegisterRequest): Promise<ApiResponse<LoginResponse>> {
-    const response = await this.makeRequest<LoginResponse>(AUTH_ENDPOINTS.REGISTER, {
+    const response = await this.makeRequest<LoginResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
     })
 
     if (response.success && response.data) {
       await this.setAuthData(response.data)
+      // Sync to extension using unified sync service
+      await authSyncService.syncAuthToExtension(response.data)
     }
 
     return response
   }
 
   async logout(): Promise<ApiResponse<void>> {
-    const refreshToken = this.getRefreshToken()
+    const token = this.getAccessToken()
 
-    // Call backend logout API
-    const response = await this.makeRequest<void>(AUTH_ENDPOINTS.LOGOUT, {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    })
+    // Call logout API if we have a token
+    let response: ApiResponse<void> = { success: true }
+    if (token) {
+      response = await this.makeRequest<void>('/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    }
 
-    // Clear local auth data
+    // Always clear auth data locally and sync to extension
     await this.clearAuthData()
-    
-    // FIXED: Notify extension of logout
-    await this.notifyExtensionLogout()
-    
+    await authSyncService.syncLogoutToExtension('Client logout')
+
     return response
   }
 
@@ -146,33 +118,49 @@ class AuthService {
       }
     }
 
-    const response = await this.makeRequest<LoginResponse>(AUTH_ENDPOINTS.REFRESH, {
+    const response = await this.makeRequest<LoginResponse>('/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
     })
 
     if (response.success && response.data) {
       await this.setAuthData(response.data)
+      // Sync refreshed auth to extension
+      await authSyncService.syncAuthToExtension(response.data)
     } else {
+      // If refresh fails, clear auth data
       await this.clearAuthData()
+      await authSyncService.syncLogoutToExtension('Token refresh failed')
     }
 
     return response
   }
 
   async getCurrentUser(): Promise<ApiResponse<User>> {
-    return this.makeRequest<User>(AUTH_ENDPOINTS.ME)
+    const token = this.getAccessToken()
+
+    if (!token) {
+      return {
+        success: false,
+        error: 'No access token available',
+      }
+    }
+
+    return this.makeRequest<User>('/auth/me', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
   }
 
   async forgotPassword(email: string): Promise<ApiResponse<void>> {
-    return this.makeRequest<void>(AUTH_ENDPOINTS.FORGOT_PASSWORD, {
+    return this.makeRequest<void>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     })
   }
 
   async resetPassword(token: string, password: string): Promise<ApiResponse<void>> {
-    return this.makeRequest<void>(AUTH_ENDPOINTS.RESET_PASSWORD, {
+    return this.makeRequest<void>('/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     })
@@ -187,9 +175,9 @@ class AuthService {
       localStorage.setItem(AUTH_STORAGE_KEYS.USER_DATA, JSON.stringify(authData.user))
       localStorage.setItem(AUTH_STORAGE_KEYS.EXPIRES_AT, authData.expiresAt.toString())
 
-      await this.syncWithExtension(authData)
+      console.log('✅ Auth data stored successfully')
     } catch (error) {
-      console.error('Failed to set auth data:', error)
+      console.error('❌ Failed to set auth data:', error)
     }
   }
 
@@ -202,112 +190,9 @@ class AuthService {
         localStorage.removeItem(key)
       })
 
-      // Clear extension auth
-      await this.clearExtensionAuth()
-      
-      console.log('✅ All auth data cleared')
+      console.log('✅ Local auth data cleared')
     } catch (error) {
       console.error('❌ Failed to clear auth data:', error)
-    }
-  }
-
-  private async syncWithExtension(authData: LoginResponse): Promise<void> {
-    const chromeAPI = getChromeAPI()
-    if (!chromeAPI) return
-
-    try {
-      const extensionAuthData: ExtensionAuthData = {
-        token: authData.accessToken,
-        refreshToken: authData.refreshToken,
-        user: {
-          id: authData.user.id,
-          name: authData.user.name,
-          email: authData.user.email,
-          credits: authData.user.credits,
-          plan: authData.user.plan.toLowerCase(),
-        },
-        expiresAt: authData.expiresAt,
-        loginTime: new Date().toISOString(),
-      }
-
-      await chromeAPI.storage.sync.set({
-        [EXTENSION_STORAGE_KEYS.AUTH_DATA]: extensionAuthData,
-      })
-
-      await chromeAPI.storage.local.set({
-        knuggetUserInfo: extensionAuthData,
-      })
-
-      console.log('Auth data synced with Chrome extension')
-    } catch (error) {
-      console.error('Failed to sync with Chrome extension:', error)
-    }
-  }
-
-  private async clearExtensionAuth(): Promise<void> {
-    const chromeAPI = getChromeAPI()
-    if (!chromeAPI) return
-
-    try {
-      // Clear both sync and local storage
-      await Promise.all([
-        chromeAPI.storage.sync.remove(EXTENSION_STORAGE_KEYS.AUTH_DATA),
-        chromeAPI.storage.local.remove('knuggetUserInfo')
-      ])
-      
-      console.log('✅ Extension auth data cleared from frontend')
-    } catch (error) {
-      console.error('❌ Failed to clear extension auth from frontend:', error)
-    }
-  }
-
-  // FIXED: Notification methods for extension sync
-  async notifyExtensionAuthSuccess(authData: LoginResponse): Promise<void> {
-    const chromeAPI = getChromeAPI()
-    if (!chromeAPI) return
-
-    try {
-      const extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID
-      if (!extensionId) return
-
-      await chromeAPI.runtime.sendMessage(extensionId, {
-        type: 'KNUGGET_AUTH_SUCCESS',
-        payload: {
-          token: authData.accessToken,
-          refreshToken: authData.refreshToken,
-          user: authData.user,
-          expiresAt: authData.expiresAt,
-        },
-      })
-    } catch (error) {
-      console.error('Failed to notify extension of auth success:', error)
-    }
-  }
-
-  async notifyExtensionLogout(): Promise<void> {
-    const chromeAPI = getChromeAPI()
-    if (!chromeAPI) return
-
-    try {
-      const extensionId = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID
-      if (!extensionId) {
-        console.warn('Chrome extension ID not configured for logout notification')
-        return
-      }
-
-      // Send logout message to extension
-      await chromeAPI.runtime.sendMessage(extensionId, {
-        type: 'KNUGGET_LOGOUT',
-        payload: {
-          reason: 'Frontend logout',
-          timestamp: new Date().toISOString(),
-        }
-      })
-      
-      console.log('✅ Extension notified of logout via runtime message')
-    } catch (error) {
-      console.error('❌ Failed to notify extension of logout:', error)
-      // Don't throw - continue with local logout
     }
   }
 

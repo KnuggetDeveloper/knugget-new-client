@@ -1,15 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import { createContext, useContext, useReducer, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, ReactNode, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { AuthState, AuthAction, AuthContextType, UpdateProfileRequest, User, LoginResponse } from '@/types/auth'
-import AuthService from '@/lib/auth-service'
+import { AuthState, AuthAction, AuthContextType, UpdateProfileRequest } from '@/types/auth'
+import { authService } from '@/lib/auth-service'
 import { formatError } from '@/lib/utils'
 import { authSyncService } from '@/lib/auth-sync'
-
-// Create instance of AuthService
-const authService = new AuthService()
 
 const initialState: AuthState = {
   user: null,
@@ -81,32 +78,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [state, dispatch] = useReducer(authReducer, initialState)
   const router = useRouter()
 
-  // FIXED: Enhanced initialization with error recovery
+  // Initialize auth on mount
   useEffect(() => {
     const initializeAuth = async () => {
       try {
         dispatch({ type: 'AUTH_START' })
 
-        // Try to initialize from extension first, then localStorage
-        const { user, isAuthenticated } = await authSyncService.initializeFromExtension()
+        // Try to initialize from extension first, then fallback to local storage
+        const extensionAuth = await authSyncService.initializeFromExtension()
+
+        if (extensionAuth.isAuthenticated && extensionAuth.user) {
+          dispatch({ type: 'AUTH_SUCCESS', payload: extensionAuth.user })
+          console.log('✅ Auth initialized from extension')
+          return
+        }
+
+        // Fallback to local storage
+        const { user, isAuthenticated } = authService.initializeFromStorage()
 
         if (isAuthenticated && user) {
           // Validate token with backend
           const isValid = await validateTokenWithBackend()
-
           if (isValid) {
             dispatch({ type: 'AUTH_SUCCESS', payload: user })
+            console.log('✅ Auth initialized from local storage')
           } else {
-            console.warn('⚠️ Token validation failed, clearing auth')
-            await clearAuthData()
-            dispatch({ type: 'AUTH_LOGOUT' })
+            await handleAuthFailure('Session expired')
           }
         } else {
           dispatch({ type: 'AUTH_LOGOUT' })
         }
       } catch (error) {
-        console.error('❌ Failed to initialize auth:', error)
-        await clearAuthData()
+        console.error('❌ Auth initialization failed:', error)
         dispatch({ type: 'AUTH_ERROR', payload: 'Failed to initialize authentication' })
       }
     }
@@ -114,29 +117,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initializeAuth()
   }, [])
 
-  // FIXED: Enhanced extension auth change listener with error handling
+  // Listen for extension auth changes
   useEffect(() => {
     const handleExtensionAuthChange = async (event: Event) => {
-      try {
-        const customEvent = event as CustomEvent<{ isAuthenticated: boolean; user: User }>
-        const { isAuthenticated, user } = customEvent.detail
+      const customEvent = event as CustomEvent
+      const { isAuthenticated, user } = customEvent.detail
 
-        if (isAuthenticated && user) {
-          // Validate the auth data before accepting
-          if (validateUserData(user)) {
-            dispatch({ type: 'AUTH_SUCCESS', payload: user })
-            console.log('✅ Extension auth sync successful')
-          } else {
-            console.error('❌ Invalid user data from extension')
-            dispatch({ type: 'AUTH_ERROR', payload: 'Invalid authentication data received' })
-          }
-        } else {
+      try {
+        if (isAuthenticated && user && !state.isAuthenticated) {
+          // Extension logged in, sync to web app
+          dispatch({ type: 'AUTH_SUCCESS', payload: user })
+          console.log('✅ Extension login synced to web app')
+        } else if (!isAuthenticated && state.isAuthenticated) {
+          // Extension logged out, logout from web app
           dispatch({ type: 'AUTH_LOGOUT' })
-          console.log('ℹ️ Extension auth cleared')
+          console.log('✅ Extension logout synced to web app')
+          router.push('/login')
         }
       } catch (error) {
-        console.error('❌ Error handling extension auth change:', error)
-        dispatch({ type: 'AUTH_ERROR', payload: 'Failed to sync authentication with extension' })
+        console.error('❌ Failed to handle extension auth change:', error)
       }
     }
 
@@ -145,54 +144,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       window.removeEventListener('extensionAuthChange', handleExtensionAuthChange)
     }
-  }, [])
+  }, [state.isAuthenticated, router])
 
-  // FIXED: Enhanced auto-refresh with comprehensive error handling
-  useEffect(() => {
+  // Auto-refresh token when needed
+  const scheduleTokenRefresh = useCallback(() => {
     if (!state.isAuthenticated) return
 
-    let refreshInterval: NodeJS.Timeout
-    let retryCount = 0
-    const maxRetries = 3
+    const expiresAt = authService.getExpiresAt()
+    if (!expiresAt) return
 
-    const scheduleTokenRefresh = () => {
-      refreshInterval = setInterval(async () => {
+    const now = Date.now()
+    const timeToRefresh = expiresAt - now - (10 * 60 * 1000) // 10 minutes before expiry
+
+    if (timeToRefresh > 0) {
+      const timeoutId = setTimeout(async () => {
         try {
-          const success = await authService.autoRefreshToken()
-
-          if (success) {
-            retryCount = 0 // Reset retry count on success
-            console.log('✅ Token auto-refresh successful')
-          } else {
-            retryCount++
-            console.warn(`⚠️ Token refresh failed (attempt ${retryCount}/${maxRetries})`)
-
-            if (retryCount >= maxRetries) {
-              console.error('❌ Token refresh failed after max retries, logging out')
-              await handleAuthFailure('Session expired. Please sign in again.')
-            }
-          }
+          console.log('🔄 Auto-refreshing token...')
+          await refreshAuth()
         } catch (error) {
-          retryCount++
-          console.error(`❌ Token refresh error (attempt ${retryCount}/${maxRetries}):`, error)
-
-          if (retryCount >= maxRetries) {
-            await handleAuthFailure('Session expired. Please sign in again.')
-          }
+          console.error('❌ Auto token refresh failed:', error)
+          await handleAuthFailure('Session expired')
         }
-      }, 5 * 60 * 1000) // Check every 5 minutes
-    }
+      }, timeToRefresh)
 
-    scheduleTokenRefresh()
-
-    return () => {
-      if (refreshInterval) {
-        clearInterval(refreshInterval)
-      }
+      return () => clearTimeout(timeoutId)
+    } else {
+      // Token is already expired or about to expire, refresh immediately
+      refreshAuth().catch(error => {
+        console.error('❌ Immediate token refresh failed:', error)
+        handleAuthFailure('Session expired')
+      })
     }
   }, [state.isAuthenticated])
 
-  // FIXED: Enhanced login with comprehensive error handling
+  useEffect(() => {
+    const cleanup = scheduleTokenRefresh()
+    return cleanup
+  }, [scheduleTokenRefresh])
+
+  // Login function
   async function login(email: string, password: string) {
     try {
       dispatch({ type: 'AUTH_START' })
@@ -201,30 +191,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (response.success && response.data) {
         dispatch({ type: 'AUTH_SUCCESS', payload: response.data.user })
-
-        // FIXED: Enhanced extension notification with error handling
-        await notifyExtensionAuthSuccess(response.data)
-
-        // Redirect to dashboard or intended page
-        const returnUrl = new URLSearchParams(window.location.search).get('returnUrl')
-        router.push(returnUrl || '/dashboard')
+        console.log('✅ Login successful')
       } else {
-        const errorMessage = response.error || 'Login failed'
+        const errorMessage = formatError(response.error || 'Login failed')
         dispatch({ type: 'AUTH_ERROR', payload: errorMessage })
         throw new Error(errorMessage)
       }
     } catch (error) {
+      console.error('❌ Login error:', error)
       const errorMessage = formatError(error)
       dispatch({ type: 'AUTH_ERROR', payload: errorMessage })
-
-      // Clear any corrupted auth data
-      await clearAuthData()
-
       throw error
     }
   }
 
-  // FIXED: Enhanced signup with error handling
+  // Signup function
   async function signup(email: string, password: string, name?: string) {
     try {
       dispatch({ type: 'AUTH_START' })
@@ -233,29 +214,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (response.success && response.data) {
         dispatch({ type: 'AUTH_SUCCESS', payload: response.data.user })
-
-        // FIXED: Enhanced extension notification with error handling
-        await notifyExtensionAuthSuccess(response.data)
-
-        // Redirect to dashboard
-        router.push('/dashboard')
+        console.log('✅ Signup successful')
       } else {
-        const errorMessage = response.error || 'Signup failed'
+        const errorMessage = formatError(response.error || 'Signup failed')
         dispatch({ type: 'AUTH_ERROR', payload: errorMessage })
         throw new Error(errorMessage)
       }
     } catch (error) {
+      console.error('❌ Signup error:', error)
       const errorMessage = formatError(error)
       dispatch({ type: 'AUTH_ERROR', payload: errorMessage })
-
-      // Clear any corrupted auth data
-      await clearAuthData()
-
       throw error
     }
   }
 
-  // FIXED: Enhanced logout with comprehensive cleanup
+  // Enhanced logout with comprehensive cleanup
   async function logout() {
     try {
       dispatch({ type: 'AUTH_START' })
@@ -263,32 +236,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Call logout API (don't fail if this errors)
       try {
         await authService.logout()
+        console.log('✅ Logout API call successful')
       } catch (error) {
         console.warn('⚠️ Logout API call failed:', error)
         // Continue with local cleanup even if API fails
       }
 
-      // FIXED: Enhanced extension notification with error handling
-      await notifyExtensionLogout()
-
-      // Clear all auth data
-      await clearAuthData()
-
+      // Clear all auth data and sync to extension (handled by authService.logout())
       dispatch({ type: 'AUTH_LOGOUT' })
 
       // Redirect to login page
       router.push('/login')
+      console.log('✅ Logout completed successfully')
     } catch (error) {
       console.error('❌ Logout error:', error)
       // Force logout locally even if other operations fail
-      await clearAuthData()
       dispatch({ type: 'AUTH_LOGOUT' })
       router.push('/login')
     }
   }
 
-  // FIXED: Enhanced token refresh with error recovery
-  async function refreshAuth() {
+  // Enhanced token refresh with error recovery
+  const refreshAuth = useCallback(async () => {
     try {
       dispatch({ type: 'AUTH_START' })
 
@@ -296,18 +265,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (response.success && response.data) {
         dispatch({ type: 'AUTH_SUCCESS', payload: response.data.user })
-        console.log('✅ Manual auth refresh successful')
+        console.log('✅ Token refresh successful')
       } else {
-        console.warn('⚠️ Manual auth refresh failed')
+        console.warn('⚠️ Token refresh failed')
         await handleAuthFailure('Session expired. Please sign in again.')
       }
     } catch (error) {
-      console.error('❌ Failed to refresh auth:', error)
+      console.error('❌ Failed to refresh token:', error)
       await handleAuthFailure('Authentication error. Please sign in again.')
     }
-  }
+  }, [])
 
-  // FIXED: Enhanced profile update with error handling
+  // Enhanced profile update with error handling
   async function updateProfile(data: UpdateProfileRequest) {
     try {
       // Optimistically update UI
@@ -331,31 +300,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  // FIXED: Enhanced extension notification with retry logic
-  async function notifyExtensionAuthSuccess(authData: LoginResponse): Promise<void> {
-    try {
-      await authService.notifyExtensionAuthSuccess(authData)
-      console.log('✅ Extension notified of auth success')
-    } catch (error) {
-      console.error('❌ Error notifying extension:', error)
-      // Continue without throwing - extension sync is not critical for web app
-    }
-  }
-
-  // FIXED: Enhanced extension logout notification
-  async function notifyExtensionLogout(): Promise<void> {
-    try {
-      await authSyncService.clearExtensionAuth()
-      
-      await authService.notifyExtensionLogout()
-      console.log('✅ Extension notified of logout')
-    } catch (error) {
-      console.error('❌ Error notifying extension of logout:', error)
-      // Continue without throwing
-    }
-  }
-
-  // FIXED: Validate token with backend
+  // Validate token with backend
   async function validateTokenWithBackend(): Promise<boolean> {
     try {
       const response = await authService.getCurrentUser()
@@ -366,36 +311,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  // FIXED: Validate user data structure
-  function validateUserData(user: unknown): user is User {
-    return (
-      typeof user === 'object' &&
-      user !== null &&
-      typeof (user as User).id === 'string' &&
-      typeof (user as User).email === 'string' &&
-      (user as User).email.includes('@') &&
-      typeof (user as User).name === 'string' &&
-      ['FREE', 'PREMIUM'].includes((user as User).plan) &&
-      typeof (user as User).credits === 'number' &&
-      (user as User).credits >= 0
-    )
-  }
-
-  // FIXED: Handle authentication failures
+  // Handle authentication failures
   async function handleAuthFailure(errorMessage: string): Promise<void> {
     try {
       console.log('🔄 Handling auth failure:', errorMessage)
 
-      // Clear all auth data
-      await clearAuthData()
+      // Clear all auth data (this will also sync to extension)
+      await authService.logout()
 
       // Update state
-      dispatch({ type: 'AUTH_ERROR', payload: errorMessage })
-
-      // Notify extension
-      await notifyExtensionLogout()
-
-      // Show user-friendly message
       dispatch({ type: 'AUTH_ERROR', payload: errorMessage })
 
     } catch (error) {
@@ -405,42 +329,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  // FIXED: Clear all authentication data
-  async function clearAuthData(): Promise<void> {
-    try {
-      // Clear localStorage
-      const authKeys = [
-        'sb-access-token',
-        'sb-refresh-token',
-        'knugget_access_token',
-        'knugget_refresh_token',
-        'knugget_user_data',
-        'knugget_expires_at'
-      ]
-
-      authKeys.forEach(key => {
-        try {
-          localStorage.removeItem(key)
-        } catch (error) {
-          console.warn(`⚠️ Failed to remove ${key}:`, error)
-        }
-      })
-
-      // Clear auth sync service
-      await authSyncService.clearExtensionAuth()
-
-      console.log('✅ Auth data cleared')
-    } catch (error) {
-      console.error('❌ Error clearing auth data:', error)
-      // Don't throw - we want to continue with logout even if cleanup fails
-    }
-  }
-
   function clearError() {
     dispatch({ type: 'AUTH_CLEAR_ERROR' })
   }
 
-  // FIXED: Enhanced error recovery on network reconnection
+  // Enhanced error recovery on network reconnection
   useEffect(() => {
     const handleOnline = async () => {
       if (state.error && state.error.includes('Network')) {
@@ -474,7 +367,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [refreshAuth, state.error])
 
-  // FIXED: Enhanced context value with error recovery methods
+  // Enhanced context value with error recovery methods
   const contextValue: ExtendedAuthContextType = {
     user: state.user,
     isAuthenticated: state.isAuthenticated,
