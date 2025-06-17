@@ -1,24 +1,24 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Additional UI components for the dashboard
 
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
 // Dropdown Menu Components
 const DropdownMenu = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & {
-    open?: boolean
-    onOpenChange?: (open: boolean) => void
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
   }
 >(({ className, open, onOpenChange, children, ...props }, ref) => {
   return (
     <div ref={ref} className={cn("relative", className)} {...props}>
       {children}
     </div>
-  )
-})
-DropdownMenu.displayName = "DropdownMenu"
+  );
+});
+DropdownMenu.displayName = "DropdownMenu";
 
 const DropdownMenuTrigger = React.forwardRef<
   HTMLButtonElement,
@@ -34,8 +34,8 @@ const DropdownMenuTrigger = React.forwardRef<
   >
     {children}
   </button>
-))
-DropdownMenuTrigger.displayName = "DropdownMenuTrigger"
+));
+DropdownMenuTrigger.displayName = "DropdownMenuTrigger";
 
 const DropdownMenuContent = React.forwardRef<
   HTMLDivElement,
@@ -49,8 +49,8 @@ const DropdownMenuContent = React.forwardRef<
     )}
     {...props}
   />
-))
-DropdownMenuContent.displayName = "DropdownMenuContent"
+));
+DropdownMenuContent.displayName = "DropdownMenuContent";
 
 const DropdownMenuItem = React.forwardRef<
   HTMLDivElement,
@@ -64,8 +64,8 @@ const DropdownMenuItem = React.forwardRef<
     )}
     {...props}
   />
-))
-DropdownMenuItem.displayName = "DropdownMenuItem"
+));
+DropdownMenuItem.displayName = "DropdownMenuItem";
 
 const DropdownMenuSeparator = React.forwardRef<
   HTMLDivElement,
@@ -76,18 +76,33 @@ const DropdownMenuSeparator = React.forwardRef<
     className={cn("-mx-1 my-1 h-px bg-muted", className)}
     {...props}
   />
-))
-DropdownMenuSeparator.displayName = "DropdownMenuSeparator"
+));
+DropdownMenuSeparator.displayName = "DropdownMenuSeparator";
+
+const DropdownMenuLabel = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "px-2 py-1.5 text-xs font-semibold text-muted-foreground",
+      className
+    )}
+    {...props}
+  />
+));
+DropdownMenuLabel.displayName = "DropdownMenuLabel";
 
 // Dialog Components
 const Dialog = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & {
-    open?: boolean
-    onOpenChange?: (open: boolean) => void
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
   }
 >(({ className, open, onOpenChange, children, ...props }, ref) => {
-  if (!open) return null
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -105,9 +120,9 @@ const Dialog = React.forwardRef<
         </div>
       </div>
     </div>
-  )
-})
-Dialog.displayName = "Dialog"
+  );
+});
+Dialog.displayName = "Dialog";
 
 const DialogContent = React.forwardRef<
   HTMLDivElement,
@@ -116,8 +131,8 @@ const DialogContent = React.forwardRef<
   <div ref={ref} className={cn("space-y-4", className)} {...props}>
     {children}
   </div>
-))
-DialogContent.displayName = "DialogContent"
+));
+DialogContent.displayName = "DialogContent";
 
 const DialogHeader = React.forwardRef<
   HTMLDivElement,
@@ -125,11 +140,14 @@ const DialogHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)}
+    className={cn(
+      "flex flex-col space-y-1.5 text-center sm:text-left",
+      className
+    )}
     {...props}
   />
-))
-DialogHeader.displayName = "DialogHeader"
+));
+DialogHeader.displayName = "DialogHeader";
 
 const DialogTitle = React.forwardRef<
   HTMLHeadingElement,
@@ -137,11 +155,14 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h3
     ref={ref}
-    className={cn("text-lg font-semibold leading-none tracking-tight", className)}
+    className={cn(
+      "text-lg font-semibold leading-none tracking-tight",
+      className
+    )}
     {...props}
   />
-))
-DialogTitle.displayName = "DialogTitle"
+));
+DialogTitle.displayName = "DialogTitle";
 
 const DialogDescription = React.forwardRef<
   HTMLParagraphElement,
@@ -152,8 +173,8 @@ const DialogDescription = React.forwardRef<
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
-))
-DialogDescription.displayName = "DialogDescription"
+));
+DialogDescription.displayName = "DialogDescription";
 
 const DialogFooter = React.forwardRef<
   HTMLDivElement,
@@ -161,17 +182,20 @@ const DialogFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
+    className={cn(
+      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+      className
+    )}
     {...props}
   />
-))
-DialogFooter.displayName = "DialogFooter"
+));
+DialogFooter.displayName = "DialogFooter";
 
 // Badge Component
 const Badge = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & {
-    variant?: "default" | "secondary" | "destructive" | "outline"
+    variant?: "default" | "secondary" | "destructive" | "outline";
   }
 >(({ className, variant = "default", ...props }, ref) => (
   <div
@@ -179,29 +203,35 @@ const Badge = React.forwardRef<
     className={cn(
       "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
       {
-        "border-transparent bg-primary text-primary-foreground hover:bg-primary/80": variant === "default",
-        "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80": variant === "secondary",
-        "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80": variant === "destructive",
+        "border-transparent bg-primary text-primary-foreground hover:bg-primary/80":
+          variant === "default",
+        "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80":
+          variant === "secondary",
+        "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80":
+          variant === "destructive",
         "text-foreground": variant === "outline",
       },
       className
     )}
     {...props}
   />
-))
-Badge.displayName = "Badge"
+));
+Badge.displayName = "Badge";
 
 // Progress Component
 const Progress = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & {
-    value?: number
-    max?: number
+    value?: number;
+    max?: number;
   }
 >(({ className, value = 0, max = 100, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("relative h-4 w-full overflow-hidden rounded-full bg-secondary", className)}
+    className={cn(
+      "relative h-4 w-full overflow-hidden rounded-full bg-secondary",
+      className
+    )}
     {...props}
   >
     <div
@@ -209,8 +239,8 @@ const Progress = React.forwardRef<
       style={{ transform: `translateX(-${100 - (value / max) * 100}%)` }}
     />
   </div>
-))
-Progress.displayName = "Progress"
+));
+Progress.displayName = "Progress";
 
 // Skeleton Component
 const Skeleton = React.forwardRef<
@@ -222,14 +252,14 @@ const Skeleton = React.forwardRef<
     className={cn("animate-pulse rounded-md bg-muted", className)}
     {...props}
   />
-))
-Skeleton.displayName = "Skeleton"
+));
+Skeleton.displayName = "Skeleton";
 
 // Separator Component
 const Separator = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & {
-    orientation?: "horizontal" | "vertical"
+    orientation?: "horizontal" | "vertical";
   }
 >(({ className, orientation = "horizontal", ...props }, ref) => (
   <div
@@ -241,30 +271,30 @@ const Separator = React.forwardRef<
     )}
     {...props}
   />
-))
-Separator.displayName = "Separator"
+));
+Separator.displayName = "Separator";
 
 // Tooltip Components
 const Tooltip = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & {
-    open?: boolean
-    onOpenChange?: (open: boolean) => void
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
   }
 >(({ className, children, ...props }, ref) => (
   <div ref={ref} className={cn("relative", className)} {...props}>
     {children}
   </div>
-))
-Tooltip.displayName = "Tooltip"
+));
+Tooltip.displayName = "Tooltip";
 
 const TooltipTrigger = React.forwardRef<
   HTMLButtonElement,
   React.ButtonHTMLAttributes<HTMLButtonElement>
 >(({ className, ...props }, ref) => (
   <button ref={ref} className={cn("", className)} {...props} />
-))
-TooltipTrigger.displayName = "TooltipTrigger"
+));
+TooltipTrigger.displayName = "TooltipTrigger";
 
 const TooltipContent = React.forwardRef<
   HTMLDivElement,
@@ -278,8 +308,8 @@ const TooltipContent = React.forwardRef<
     )}
     {...props}
   />
-))
-TooltipContent.displayName = "TooltipContent"
+));
+TooltipContent.displayName = "TooltipContent";
 
 // Export all components
 export {
@@ -288,6 +318,7 @@ export {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -301,4 +332,4 @@ export {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-}
+};

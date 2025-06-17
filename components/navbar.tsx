@@ -1,325 +1,254 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { LogOut, User, Settings, CreditCard, BarChart3, Menu, X } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
+import { useState } from 'react'
+import { 
+  Menu, 
+  X, 
+  LogOut, 
+  User, 
+  FileText, 
+  BarChart3,
+  Settings,
+  Chrome,
+  Linkedin
+} from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
-import { formatUserName, getInitials } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import {
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
-} from '@/components/ui/avatar'
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/additional'
+import { getInitials } from '@/lib/utils'
 
-interface NavbarProps {
-  showAuthButtons?: boolean
-}
-
-export function Navbar({ showAuthButtons = true }: NavbarProps) {
-  const { user, isAuthenticated, logout, isLoading } = useAuth()
+export function Navbar() {
+  const { user, isAuthenticated, logout } = useAuth()
   const router = useRouter()
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const pathname = usePathname()
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const handleLogout = async () => {
     try {
       await logout()
+      router.push('/')
     } catch (error) {
-      console.error('Logout error:', error)
-      // Force redirect even if logout fails
-      router.push('/login')
+      console.error('Logout failed:', error)
     }
   }
 
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen)
-  }
+  const navigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
+    { name: 'Summaries', href: '/summaries', icon: FileText },
+    { name: 'LinkedIn Posts', href: '/linkedin-posts', icon: Linkedin },
+  ]
 
-  const toggleProfileMenu = () => {
-    setIsProfileMenuOpen(!isProfileMenuOpen)
-  }
-
-  const closeMenus = () => {
-    setIsMenuOpen(false)
-    setIsProfileMenuOpen(false)
+  const isActivePath = (href: string) => {
+    if (href === '/dashboard') {
+      return pathname === '/dashboard'
+    }
+    return pathname.startsWith(href)
   }
 
   return (
-    <nav className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between">
-          {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2" onClick={closeMenus}>
-            <div className="h-8 w-8 rounded-lg knugget-gradient flex items-center justify-center">
-              <span className="text-white font-bold text-lg">K</span>
-            </div>
-            <span className="text-xl font-bold knugget-gradient-text">
-              Knugget AI
-            </span>
-          </Link>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-6">
-            {isAuthenticated && (
-              <>
-                <Link
-                  href="/dashboard"
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={closeMenus}
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/summaries"
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={closeMenus}
-                >
-                  Summaries
-                </Link>
-              </>
-            )}
-            
-            <Link
-              href="/pricing"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              onClick={closeMenus}
-            >
-              Pricing
+    <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          {/* Logo and brand */}
+          <div className="flex items-center">
+            <Link href="/" className="flex items-center space-x-2">
+              <div className="h-8 w-8 rounded-lg knugget-gradient flex items-center justify-center">
+                <span className="text-white font-bold text-lg">K</span>
+              </div>
+              <span className="text-xl font-bold knugget-gradient-text">
+                Knugget AI
+              </span>
             </Link>
           </div>
 
-          {/* Auth Section */}
+          {/* Desktop navigation */}
+          <div className="hidden md:flex items-center space-x-8">
+            {isAuthenticated && (
+              <>
+                {navigation.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isActivePath(item.href)
+                          ? 'text-knugget-600 bg-knugget-50 dark:bg-knugget-900 dark:text-knugget-400'
+                          : 'text-gray-700 dark:text-gray-300 hover:text-knugget-600 dark:hover:text-knugget-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{item.name}</span>
+                    </Link>
+                  )
+                })}
+              </>
+            )}
+
+            {/* Chrome Extension Badge */}
+            <div className="flex items-center space-x-2 px-3 py-1 bg-blue-50 dark:bg-blue-900 rounded-full">
+              <Chrome className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                Extension Active
+              </span>
+            </div>
+          </div>
+
+          {/* User menu */}
           <div className="flex items-center space-x-4">
-            {isLoading ? (
-              <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
-            ) : isAuthenticated && user ? (
-              <div className="relative">
-                {/* User Avatar and Credits */}
-                <div className="flex items-center space-x-3">
-                  {/* Credits Display */}
-                  <div className="hidden sm:flex items-center space-x-2 px-3 py-1 rounded-full bg-muted text-sm">
-                    <CreditCard className="h-4 w-4 text-knugget-500" />
-                    <span className="font-medium">{user.credits}</span>
-                    <span className="text-muted-foreground">credits</span>
-                  </div>
-
-                  {/* User Menu Button */}
-                  <button
-                    onClick={toggleProfileMenu}
-                    className="flex items-center space-x-2 rounded-full p-1 hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-knugget-500 focus:ring-offset-2"
-                  >
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.avatar || undefined} alt={user.name || user.email} />
-                      <AvatarFallback className="bg-knugget-500 text-white text-sm">
-                        {getInitials(user.name, user.email)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="hidden sm:block text-sm font-medium">
-                      {formatUserName(user.name, user.email)}
-                    </span>
-                  </button>
-                </div>
-
-                {/* Profile Dropdown */}
-                {isProfileMenuOpen && (
-                  <>
-                    {/* Backdrop */}
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setIsProfileMenuOpen(false)}
-                    />
-                    
-                    {/* Menu */}
-                    <div className="absolute right-0 mt-2 w-56 rounded-md border bg-popover shadow-lg z-50">
-                      <div className="p-3 border-b">
-                        <div className="flex items-center space-x-3">
-                          <Avatar className="h-10 w-10">
-                            <AvatarImage src={user.avatar || undefined} alt={user.name || user.email} />
-                            <AvatarFallback className="bg-knugget-500 text-white">
-                              {getInitials(user.name, user.email)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {formatUserName(user.name, user.email)}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {user.email}
-                            </p>
-                            <div className="flex items-center space-x-1 mt-1">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-knugget-100 text-knugget-800">
-                                {user.plan}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {user.credits} credits
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="py-1">
-                        <Link
-                          href="/dashboard"
-                          className="flex items-center px-3 py-2 text-sm hover:bg-muted transition-colors"
-                          onClick={closeMenus}
-                        >
-                          <BarChart3 className="mr-3 h-4 w-4" />
-                          Dashboard
-                        </Link>
-                        <Link
-                          href="/profile"
-                          className="flex items-center px-3 py-2 text-sm hover:bg-muted transition-colors"
-                          onClick={closeMenus}
-                        >
-                          <User className="mr-3 h-4 w-4" />
-                          Profile
-                        </Link>
-                        <Link
-                          href="/settings"
-                          className="flex items-center px-3 py-2 text-sm hover:bg-muted transition-colors"
-                          onClick={closeMenus}
-                        >
-                          <Settings className="mr-3 h-4 w-4" />
-                          Settings
-                        </Link>
-                      </div>
-                      
-                      <div className="border-t py-1">
-                        <button
-                          onClick={handleLogout}
-                          className="flex w-full items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
-                        >
-                          <LogOut className="mr-3 h-4 w-4" />
-                          Sign out
-                        </button>
+            {isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger>
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                    <div className="h-8 w-8 rounded-full bg-knugget-500 flex items-center justify-center text-white font-medium text-sm">
+                      {getInitials(user?.name || '', user?.email || '')}
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56">
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {user?.name || 'User'}
+                      </p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {user?.email}
+                      </p>
+                      <div className="flex items-center space-x-2 mt-2">
+                        <span className="text-xs text-muted-foreground">
+                          {user?.credits} credits
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          user?.plan === 'PREMIUM' 
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                            : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                        }`}>
+                          {user?.plan}
+                        </span>
                       </div>
                     </div>
-                  </>
-                )}
-              </div>
-            ) : showAuthButtons ? (
-              <div className="flex items-center space-x-3">
-                <Link href="/login" onClick={closeMenus}>
-                  <Button variant="ghost" size="sm">
-                    Sign in
-                  </Button>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem>
+                    <Link href="/profile" className="cursor-pointer">
+                      <User className="mr-2 h-4 w-4" />
+                      <span>Profile</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <Link href="/settings" className="cursor-pointer">
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>Settings</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="flex items-center space-x-4">
+                <Link
+                  href="/login"
+                  className="text-gray-700 dark:text-gray-300 hover:text-knugget-600 dark:hover:text-knugget-400 px-3 py-2 text-sm font-medium"
+                >
+                  Log in
                 </Link>
-                <Link href="/auth/signup" onClick={closeMenus}>
-                  <Button size="sm">
-                    Get Started
-                  </Button>
+                <Link
+                  href="/signup"
+                  className="bg-knugget-600 hover:bg-knugget-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                >
+                  Sign up
                 </Link>
               </div>
-            ) : null}
+            )}
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={toggleMenu}
-              className="md:hidden p-2 rounded-md hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-knugget-500 focus:ring-offset-2"
-            >
-              {isMenuOpen ? (
-                <X className="h-5 w-5" />
-              ) : (
-                <Menu className="h-5 w-5" />
-              )}
-            </button>
+            {/* Mobile menu button */}
+            <div className="md:hidden">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              >
+                {isMobileMenuOpen ? (
+                  <X className="h-6 w-6" />
+                ) : (
+                  <Menu className="h-6 w-6" />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <div className="md:hidden border-t bg-background">
-            <div className="px-2 pt-2 pb-3 space-y-1">
+        {/* Mobile menu */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden py-4 border-t border-gray-200 dark:border-gray-800">
+            <div className="space-y-2">
               {isAuthenticated && (
                 <>
-                  <Link
-                    href="/dashboard"
-                    className="block px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
-                    onClick={closeMenus}
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    href="/summaries"
-                    className="block px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
-                    onClick={closeMenus}
-                  >
-                    Summaries
-                  </Link>
-                </>
-              )}
-              
-              <Link
-                href="/pricing"
-                className="block px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
-                onClick={closeMenus}
-              >
-                Pricing
-              </Link>
-
-              {!isAuthenticated && showAuthButtons && (
-                <div className="pt-4 border-t space-y-2">
-                  <Link href="/login" className="block" onClick={closeMenus}>
-                    <Button variant="ghost" className="w-full justify-start">
-                      Sign in
-                    </Button>
-                  </Link>
-                  <Link href="/auth/signup" className="block" onClick={closeMenus}>
-                    <Button className="w-full justify-start">
-                      Get Started
-                    </Button>
-                  </Link>
-                </div>
-              )}
-
-              {isAuthenticated && user && (
-                <div className="pt-4 border-t">
-                  <div className="flex items-center px-3 py-2 space-x-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.avatar || undefined} alt={user.name || user.email} />
-                      <AvatarFallback className="bg-knugget-500 text-white text-sm">
-                        {getInitials(user.name, user.email)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {formatUserName(user.name, user.email)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {user.credits} credits • {user.plan}
-                      </p>
+                  {navigation.map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium ${
+                          isActivePath(item.href)
+                            ? 'text-knugget-600 bg-knugget-50 dark:bg-knugget-900 dark:text-knugget-400'
+                            : 'text-gray-700 dark:text-gray-300 hover:text-knugget-600 dark:hover:text-knugget-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span>{item.name}</span>
+                      </Link>
+                    )
+                  })}
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
+                    <div className="flex items-center px-3 py-2">
+                      <div className="h-8 w-8 rounded-full bg-knugget-500 flex items-center justify-center text-white font-medium text-sm mr-3">
+                        {getInitials(user?.name || '', user?.email || '')}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">
+                          {user?.name || 'User'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {user?.email}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="mt-2 space-y-1">
                     <Link
                       href="/profile"
-                      className="flex items-center px-3 py-2 text-sm hover:bg-muted rounded-md transition-colors"
-                      onClick={closeMenus}
+                      className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+                      onClick={() => setIsMobileMenuOpen(false)}
                     >
-                      <User className="mr-3 h-4 w-4" />
-                      Profile
-                    </Link>
-                    <Link
-                      href="/settings"
-                      className="flex items-center px-3 py-2 text-sm hover:bg-muted rounded-md transition-colors"
-                      onClick={closeMenus}
-                    >
-                      <Settings className="mr-3 h-4 w-4" />
-                      Settings
+                      <User className="h-4 w-4" />
+                      <span>Profile</span>
                     </Link>
                     <button
-                      onClick={handleLogout}
-                      className="flex w-full items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950 rounded-md transition-colors"
+                      onClick={() => {
+                        handleLogout()
+                        setIsMobileMenuOpen(false)
+                      }}
+                      className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md w-full text-left"
                     >
-                      <LogOut className="mr-3 h-4 w-4" />
-                      Sign out
+                      <LogOut className="h-4 w-4" />
+                      <span>Log out</span>
                     </button>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
