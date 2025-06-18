@@ -1,4 +1,4 @@
-// hooks/use-linkedin-posts.ts
+// hooks/use-linkedin-posts.ts - FIXED
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -37,7 +37,7 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
     ...initialParams,
   })
 
-  // Fetch LinkedIn posts
+  // Fetch LinkedIn posts - FIXED: Removed userId parameter
   const fetchPosts = useCallback(async (queryParams?: LinkedinPostQueryParams) => {
     if (!isAuthenticated) return
 
@@ -46,11 +46,15 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
       setError(null)
 
       const currentParams = queryParams || params
+      console.log('🔄 Fetching LinkedIn posts with params:', currentParams)
+      
       const response = await linkedinService.getPosts(currentParams)
+      console.log('📡 LinkedIn posts response:', response)
 
       if (response.success && response.data) {
         setPosts(response.data.data)
         setPagination(response.data.pagination)
+        console.log('✅ LinkedIn posts loaded:', response.data.data.length)
       } else {
         setError(response.error || 'Failed to fetch LinkedIn posts')
         setPosts([])
@@ -65,6 +69,7 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
       }
     } catch (err) {
       const errorMessage = formatError(err)
+      console.error('❌ Error fetching LinkedIn posts:', errorMessage)
       setError(errorMessage)
       setPosts([])
     } finally {
@@ -109,6 +114,7 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
 
   // Refresh posts
   const refresh = useCallback(() => {
+    console.log('🔄 Refreshing LinkedIn posts...')
     fetchPosts()
   }, [fetchPosts])
 
@@ -127,6 +133,7 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
   // Initial fetch
   useEffect(() => {
     if (isAuthenticated) {
+      console.log('🔄 Initial LinkedIn posts fetch...')
       fetchPosts()
     }
   }, [fetchPosts, isAuthenticated])
@@ -134,6 +141,7 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
   // Listen for extension sync events
   useEffect(() => {
     const handlePostSync = () => {
+      console.log('🔄 LinkedIn post sync event received')
       refresh()
     }
 

@@ -1,4 +1,4 @@
-// lib/linkedin-service.ts
+// lib/linkedin-service.ts - FIXED for frontend use
 import { getApiBaseUrl } from '@/lib/utils'
 import { authService } from '@/lib/auth-service'
 
@@ -178,6 +178,7 @@ class LinkedinService {
 
   /**
    * Get paginated list of LinkedIn posts with optional filters
+   * FIXED: Removed userId parameter since it's handled by auth middleware
    */
   async getPosts(params: LinkedinPostQueryParams = {}): Promise<ApiResponse<PaginatedLinkedinPosts>> {
     const queryString = new URLSearchParams()
@@ -194,6 +195,7 @@ class LinkedinService {
 
   /**
    * Get single LinkedIn post by ID
+   * FIXED: Removed userId parameter
    */
   async getPostById(id: string): Promise<ApiResponse<LinkedinPost>> {
     return this.makeRequest<LinkedinPost>(`/linkedin/posts/${id}`)
@@ -201,6 +203,7 @@ class LinkedinService {
 
   /**
    * Update LinkedIn post
+   * FIXED: Removed userId parameter
    */
   async updatePost(id: string, data: UpdateLinkedinPostRequest): Promise<ApiResponse<LinkedinPost>> {
     return this.makeRequest<LinkedinPost>(`/linkedin/posts/${id}`, {
@@ -211,6 +214,7 @@ class LinkedinService {
 
   /**
    * Delete LinkedIn post
+   * FIXED: Removed userId parameter
    */
   async deletePost(id: string): Promise<ApiResponse<void>> {
     return this.makeRequest<void>(`/linkedin/posts/${id}`, {
@@ -220,6 +224,7 @@ class LinkedinService {
 
   /**
    * Get LinkedIn post statistics
+   * FIXED: Removed userId parameter
    */
   async getPostStats(): Promise<ApiResponse<LinkedinPostStats>> {
     return this.makeRequest<LinkedinPostStats>('/linkedin/posts/stats')
@@ -259,21 +264,6 @@ class LinkedinService {
       limit,
       sortBy: 'savedAt',
       sortOrder: 'desc',
-    })
-  }
-
-  /**
-   * Get posts by date range
-   */
-  async getPostsByDateRange(
-    startDate: string,
-    endDate: string,
-    params: Omit<LinkedinPostQueryParams, 'startDate' | 'endDate'> = {}
-  ): Promise<ApiResponse<PaginatedLinkedinPosts>> {
-    return this.getPosts({
-      ...params,
-      startDate,
-      endDate,
     })
   }
 
