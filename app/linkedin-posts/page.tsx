@@ -17,6 +17,7 @@ import {
   Grid,
   List,
   Search,
+  Eye, // Add Eye icon for view action
 } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { useLinkedinPosts, useLinkedinPostActions, useLinkedinPostStats } from '@/hooks/use-linkedin-posts'
@@ -28,8 +29,9 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/additional'
+import { LinkedinPostModal } from '@/components/linkedin-post-modal'
 
-// LinkedIn Post Card Component
+// LinkedIn Post Card Component with Modal Support
 interface LinkedinPostCardProps {
   post: LinkedinPost
   onView: (post: LinkedinPost) => void
@@ -55,11 +57,15 @@ function LinkedinPostCard({
             <input
               type="checkbox"
               checked={isSelected}
-              onChange={(e) => onSelect(post, e.target.checked)}
+              onChange={(e) => {
+                e.stopPropagation()
+                onSelect(post, e.target.checked)
+              }}
+              onClick={(e) => e.stopPropagation()}
               className="rounded border-gray-300"
             />
-            <div className="flex-1">
-              <CardTitle className="text-lg line-clamp-2">
+            <div className="flex-1" onClick={() => onView(post)}>
+              <CardTitle className="text-lg line-clamp-2 hover:text-knugget-600 transition-colors">
                 {post.title || `Post by ${post.author}`}
               </CardTitle>
               <div className="flex items-center space-x-2 mt-1">
@@ -72,7 +78,21 @@ function LinkedinPostCard({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => window.open(post.postUrl, '_blank')}
+              onClick={(e) => {
+                e.stopPropagation()
+                onView(post)
+              }}
+              title="View full post"
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                window.open(post.postUrl, '_blank')
+              }}
               title="Open LinkedIn post"
             >
               <ExternalLink className="h-4 w-4" />
@@ -80,7 +100,10 @@ function LinkedinPostCard({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onEdit(post)}
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit(post)
+              }}
               title="Edit post"
             >
               Edit
@@ -88,7 +111,10 @@ function LinkedinPostCard({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onDelete(post)}
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(post)
+              }}
               title="Delete post"
               className="text-red-600 hover:text-red-700"
             >
@@ -97,7 +123,7 @@ function LinkedinPostCard({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0" onClick={() => onView(post)}>
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground line-clamp-3">
             {post.content}
@@ -166,6 +192,15 @@ export default function LinkedinPostsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedAuthor, setSelectedAuthor] = useState<string>('all')
   
+  // Modal state
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean
+    post: LinkedinPost | null
+  }>({
+    isOpen: false,
+    post: null,
+  })
+  
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean
@@ -212,7 +247,17 @@ export default function LinkedinPostsPage() {
 
   // Handle post actions
   const handleViewPost = (post: LinkedinPost) => {
-    window.open(post.postUrl, '_blank')
+    setModalState({
+      isOpen: true,
+      post,
+    })
+  }
+
+  const handleCloseModal = () => {
+    setModalState({
+      isOpen: false,
+      post: null,
+    })
   }
 
   const handleEditPost = (post: LinkedinPost) => {
@@ -612,6 +657,13 @@ export default function LinkedinPostsPage() {
           </div>
         )}
       </div>
+
+      {/* LinkedIn Post Modal */}
+      <LinkedinPostModal
+        isOpen={modalState.isOpen}
+        onClose={handleCloseModal}
+        post={modalState.post}
+      />
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm.isOpen && (
