@@ -1,598 +1,466 @@
+/* eslint-disable @next/next/no-img-element */
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  FileText,
-  Plus,
-  Trash2,
-  Download,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  TrendingUp,
-  Grid,
-  List,
-} from 'lucide-react'
+import { Search, Youtube, Linkedin, Globe, Twitter, Menu, X } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
-import { useSummaries, useSummaryActions, useSummaryStats, usePopularTags } from '@/hooks/use-summaries'
-import { Summary, UpdateSummaryRequest } from '@/types/summary'
-import { formatUserName } from '@/lib/utils'
-import { SummaryCard } from '@/components/summary-card'
-import { SummaryFilters } from '@/components/summary-filters'
-import { SummaryModal } from '@/components/summary-model'
+import { useSummaries } from '@/hooks/use-summaries'
+import { useLinkedinPosts } from '@/hooks/use-linkedin-posts'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Spinner } from '@/components/ui/spinner'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/additional'
+import { formatRelativeTime } from '@/lib/utils'
+
+interface KnuggetItem {
+  id: string
+  type: 'youtube' | 'linkedin' | 'website' | 'twitter'
+  title: string
+  source: string
+  author?: string
+  content?: string
+  thumbnail?: string
+  url: string
+  tags: string[]
+  createdAt: string
+}
+
+const sourceIcons = {
+  youtube: Youtube,
+  linkedin: Linkedin,
+  website: Globe,
+  twitter: Twitter,
+}
+
+const sourceColors = {
+  youtube: 'text-red-500',
+  linkedin: 'text-blue-500',
+  website: 'text-green-500',
+  twitter: 'text-blue-400',
+}
 
 export default function DashboardPage() {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth()
   const router = useRouter()
+  
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedSource, setSelectedSource] = useState('all')
+  // const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [allItems, setAllItems] = useState<KnuggetItem[]>([])
+  
+  // Fetch data from hooks
+  const { summaries, isLoading: summariesLoading } = useSummaries({ limit: 50 })
+  const { posts: linkedinPosts, isLoading: linkedinLoading } = useLinkedinPosts({ limit: 50 })
 
-  // Summary hooks
-  const {
-    summaries,
-    pagination,
-    isLoading: summariesLoading,
-    error: summariesError,
-    params,
-    search,
-    filterByStatus,
-    sort,
-    changePage,
-    refresh,
-    clearFilters,
-  } = useSummaries()
-
-  const {
-    updateSummary,
-    deleteSummary,
-    bulkDeleteSummaries,
-    isLoading: actionLoading,
-    error: actionError,
-    clearError,
-  } = useSummaryActions()
-
-  const { stats, isLoading: statsLoading, refresh: refreshStats } = useSummaryStats()
-  const { tags: popularTags, refresh: refreshTags } = usePopularTags(15)
-
-  // UI state
-  const [view, setView] = useState<'grid' | 'list'>('grid')
-  const [selectedSummaries, setSelectedSummaries] = useState<string[]>([])
-  const [modal, setModal] = useState<{
-    isOpen: boolean
-    mode: 'view' | 'edit' | 'create'
-    summary: Summary | null
-  }>({
-    isOpen: false,
-    mode: 'view',
-    summary: null,
-  })
-
-  // Show delete confirmation
-  const [deleteConfirm, setDeleteConfirm] = useState<{
-    isOpen: boolean
-    summary: Summary | null
-    isBulk: boolean
-  }>({
-    isOpen: false,
-    summary: null,
-    isBulk: false,
-  })
-
-  // Redirect to login if not authenticated
+  // Redirect if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      router.push('/login?returnUrl=/dashboard')
+      router.push('/login')
     }
   }, [isAuthenticated, authLoading, router])
 
-  // Clear action errors after 5 seconds
+  // Combine all data sources
   useEffect(() => {
-    if (actionError) {
-      const timeout = setTimeout(() => {
-        clearError()
-      }, 5000)
-      return () => clearTimeout(timeout)
+    const items: KnuggetItem[] = []
+
+    // Add summaries (YouTube)
+    summaries.forEach(summary => {
+      items.push({
+        id: summary.id,
+        type: 'youtube',
+        title: summary.videoMetadata.title,
+        source: summary.videoMetadata.channelName,
+        thumbnail: summary.videoMetadata.thumbnailUrl,
+        url: summary.videoMetadata.url,
+        tags: summary.tags,
+        createdAt: summary.createdAt,
+      })
+    })
+
+    // Add LinkedIn posts
+    linkedinPosts.forEach(post => {
+      items.push({
+        id: post.id,
+        type: 'linkedin',
+        title: post.title || `Post by ${post.author}`,
+        source: 'LinkedIn',
+        author: post.author,
+        content: post.content,
+        url: post.postUrl,
+        tags: [], // LinkedIn posts don't have tags in current structure
+        createdAt: post.savedAt,
+      })
+    })
+
+    // Sort by creation date (newest first)
+    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    
+    setAllItems(items)
+  }, [summaries, linkedinPosts])
+
+  // Filter items based on selected source and search
+  const filteredItems = allItems.filter(item => {
+    const matchesSource = selectedSource === 'all' || item.type === selectedSource
+    const matchesSearch = !searchQuery || 
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.source.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+    
+    return matchesSource && matchesSearch
+  })
+
+  // Get all unique tags
+  const allTags = Array.from(new Set(allItems.flatMap(item => item.tags)))
+    .slice(0, 20) // Limit to top 20 tags
+
+  // Get source counts
+  const sourceCounts = {
+    all: allItems.length,
+    youtube: allItems.filter(item => item.type === 'youtube').length,
+    linkedin: allItems.filter(item => item.type === 'linkedin').length,
+    website: allItems.filter(item => item.type === 'website').length,
+    twitter: allItems.filter(item => item.type === 'twitter').length,
+  }
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      router.push('/login')
+    } catch (error) {
+      console.error('Logout error:', error)
+      router.push('/login')
     }
-  }, [actionError, clearError])
+  }
 
-  // Listen for Chrome extension sync events
-  useEffect(() => {
-    const handleExtensionSync = () => {
-      refresh()
-      refreshStats()
-      refreshTags()
+  const handleItemClick = (item: KnuggetItem) => {
+    switch (item.type) {
+      case 'youtube':
+        router.push(`/knugget/youtube/${item.id}`)
+        break
+      case 'linkedin':
+        router.push(`/knugget/linkedin/${item.id}`)
+        break
+      case 'website':
+        router.push(`/knugget/website/${item.id}`)
+        break
+      case 'twitter':
+        router.push(`/knugget/twitter/${item.id}`)
+        break
     }
+  }
 
-    // Listen for summary sync events from extension
-    window.addEventListener('summarySync', handleExtensionSync)
-    return () => window.removeEventListener('summarySync', handleExtensionSync)
-  }, [refresh, refreshStats, refreshTags])
-
-  // Show loading state while checking auth
   if (authLoading) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Spinner size="lg" />
-        </div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
       </div>
     )
   }
 
-  // Don't render if not authenticated (will redirect)
-  if (!isAuthenticated || !user) {
+  if (!isAuthenticated) {
     return null
   }
 
-  // Handle summary actions
-  const handleViewSummary = (summary: Summary) => {
-    setModal({
-      isOpen: true,
-      mode: 'view',
-      summary,
-    })
-  }
-
-  const handleEditSummary = (summary: Summary) => {
-    setModal({
-      isOpen: true,
-      mode: 'edit',
-      summary,
-    })
-  }
-
-  const handleDeleteSummary = (summary: Summary) => {
-    setDeleteConfirm({
-      isOpen: true,
-      summary,
-      isBulk: false,
-    })
-  }
-
-  const handleCreateNew = () => {
-    setModal({
-      isOpen: true,
-      mode: 'create',
-      summary: null,
-    })
-  }
-
-  const handleSelectSummary = (summary: Summary, selected: boolean) => {
-    if (selected) {
-      setSelectedSummaries([...selectedSummaries, summary.id])
-    } else {
-      setSelectedSummaries(selectedSummaries.filter(id => id !== summary.id))
-    }
-  }
-
-  const handleSelectAll = () => {
-    if (selectedSummaries.length === summaries.length) {
-      setSelectedSummaries([])
-    } else {
-      setSelectedSummaries(summaries.map((s: Summary) => s.id))
-    }
-  }
-
-  const handleBulkDelete = () => {
-    if (selectedSummaries.length > 0) {
-      setDeleteConfirm({
-        isOpen: true,
-        summary: null,
-        isBulk: true,
-      })
-    }
-  }
-
-  const confirmDelete = async () => {
-    try {
-      if (deleteConfirm.isBulk) {
-        const success = await bulkDeleteSummaries(selectedSummaries)
-        if (success) {
-          setSelectedSummaries([])
-          refresh()
-          refreshStats()
-        }
-      } else if (deleteConfirm.summary) {
-        const success = await deleteSummary(deleteConfirm.summary.id)
-        if (success) {
-          refresh()
-          refreshStats()
-        }
-      }
-    } catch (error) {
-      console.error('Delete failed:', error)
-    } finally {
-      setDeleteConfirm({ isOpen: false, summary: null, isBulk: false })
-    }
-  }
-
-  const handleSaveSummary = async (data: UpdateSummaryRequest) => {
-    if (!modal.summary) {
-      // Handle create new summary case
-      // For now, we'll just close the modal since create functionality
-      // would typically require additional API endpoints for creating from scratch
-      setModal({ isOpen: false, mode: 'view', summary: null })
-      return
-    }
-
-    try {
-      const updatedSummary = await updateSummary(modal.summary.id, data)
-      if (updatedSummary) {
-        refresh()
-        refreshStats()
-        setModal({ isOpen: false, mode: 'view', summary: null })
-      }
-    } catch (error) {
-      console.error('Save failed:', error)
-      // Error is handled by the hook and displayed in the UI
-    }
-  }
-
-  const handleExport = async () => {
-    try {
-      const summariesToExport = selectedSummaries.length > 0
-        ? summaries.filter((s: Summary) => selectedSummaries.includes(s.id))
-        : summaries
-
-      if (summariesToExport.length === 0) {
-        return
-      }
-
-      const exportData = {
-        summaries: summariesToExport,
-        metadata: {
-          exportedAt: new Date().toISOString(),
-          totalCount: summariesToExport.length,
-          version: '1.0',
-          exportedBy: user.email,
-        }
-      }
-
-      const dataStr = JSON.stringify(exportData, null, 2)
-      const dataBlob = new Blob([dataStr], { type: 'application/json' })
-      const url = URL.createObjectURL(dataBlob)
-
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `knugget-summaries-${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      URL.revokeObjectURL(url)
-
-      // Clear selection after export
-      if (selectedSummaries.length > 0) {
-        setSelectedSummaries([])
-      }
-    } catch (error) {
-      console.error('Export failed:', error)
-    }
-  }
-
-  const handleRefresh = () => {
-    refresh()
-    refreshStats()
-    refreshTags()
-  }
-
   return (
-    <div className="container mx-auto px-4 py-8 space-y-8">
-      {/* Header */}
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold">
-          Welcome back, {formatUserName(user.name, user.email)}!
-        </h1>
-        <p className="text-muted-foreground">
-          Manage your AI-powered video summaries and insights.
-        </p>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Summaries</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? (
-                <Spinner size="sm" />
-              ) : (
-                stats?.totalSummaries || summaries.length
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              All time generated
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Month</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? (
-                <Spinner size="sm" />
-              ) : (
-                stats?.summariesThisMonth || 0
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Recent activity
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statsLoading ? (
-                <Spinner size="sm" />
-              ) : (
-                stats?.completedSummaries ||
-                summaries.filter((s: Summary) => s.status === 'COMPLETED').length
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Successfully processed
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Credits Left</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{user.credits}</div>
-            <p className="text-xs text-muted-foreground">
-              {user.plan} plan
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Error Display */}
-      {(summariesError || actionError) && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            {summariesError || actionError}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Filters and Actions */}
-      <SummaryFilters
-        params={params}
-        onSearch={search}
-        onFilterByStatus={filterByStatus}
-        onSort={sort}
-        onClearFilters={clearFilters}
-        onViewChange={setView}
-        onExport={handleExport}
-        onCreateNew={handleCreateNew}
-        view={view}
-        isLoading={summariesLoading}
-        popularTags={popularTags}
-      />
-
-      {/* Bulk Actions */}
-      {selectedSummaries.length > 0 && (
-        <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium">
-              {selectedSummaries.length} summary{selectedSummaries.length === 1 ? '' : 'ies'} selected
-            </span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSelectAll}
-            >
-              {selectedSummaries.length === summaries.length ? 'Deselect All' : 'Select All'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={selectedSummaries.length === 0}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Export Selected
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBulkDelete}
-              disabled={actionLoading}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Selected
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Content */}
-      <div className="space-y-6">
-        {/* View Toggle */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">
-            Your Summaries ({pagination.total})
-          </h2>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant={view === 'grid' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setView('grid')}
-            >
-              <Grid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === 'list' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setView('list')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={summariesLoading}
-            >
-              <RefreshCw className={`h-4 w-4 ${summariesLoading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {summariesLoading && summaries.length === 0 && (
-          <div className="flex items-center justify-center py-12">
-            <Spinner size="lg" />
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!summariesLoading && summaries.length === 0 && !summariesError && (
-          <div className="text-center py-12">
-            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No summaries yet</h3>
-            <p className="text-muted-foreground mb-4">
-              Get started by creating your first video summary
-            </p>
-            <Button onClick={handleCreateNew}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Summary
-            </Button>
-          </div>
-        )}
-
-        {/* Summaries Grid/List */}
-        {summaries.length > 0 && (
-          <div className={
-            view === 'grid'
-              ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-              : 'space-y-4'
-          }>
-            {summaries.map((summary: Summary) => (
-              <SummaryCard
-                key={summary.id}
-                summary={summary}
-                onView={handleViewSummary}
-                onEdit={handleEditSummary}
-                onDelete={handleDeleteSummary}
-                onSelect={handleSelectSummary}
-                isSelected={selectedSummaries.includes(summary.id)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
+    <div className="flex h-screen bg-gray-950 text-white">
+      {/* Sidebar */}
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-gray-900 border-r border-gray-800 flex flex-col transition-all duration-300`}>
+        {/* Header */}
+        <div className="p-4 border-b border-gray-800">
           <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-              {pagination.total} summaries
-            </div>
-            <div className="flex items-center space-x-2">
+            {!sidebarCollapsed && (
+              <div className="flex items-center space-x-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">K</span>
+                </div>
+                <span className="text-lg font-semibold">Knugget</span>
+              </div>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="text-gray-400 hover:text-white"
+            >
+              {sidebarCollapsed ? <Menu className="h-5 w-5" /> : <X className="h-5 w-5" />}
+            </Button>
+          </div>
+        </div>
+
+        {/* Sources */}
+        <div className="flex-1 p-4 space-y-6">
+          <div>
+            {!sidebarCollapsed && <h3 className="text-sm font-medium text-gray-400 mb-3">Sources</h3>}
+            <div className="space-y-1">
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() => changePage(pagination.page - 1)}
-                disabled={!pagination.hasPrev || summariesLoading}
+                variant={selectedSource === 'all' ? 'secondary' : 'ghost'}
+                className={`w-full ${sidebarCollapsed ? 'px-3' : 'justify-start'} text-sm`}
+                onClick={() => setSelectedSource('all')}
               >
-                Previous
+                <div className="flex items-center space-x-3">
+                  <div className="w-4 h-4 rounded bg-orange-500 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span>All Knuggets</span>
+                      <span className="ml-auto text-xs text-gray-400">({sourceCounts.all})</span>
+                    </>
+                  )}
+                </div>
               </Button>
-              <span className="text-sm">
-                Page {pagination.page} of {pagination.totalPages}
-              </span>
+
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() => changePage(pagination.page + 1)}
-                disabled={!pagination.hasNext || summariesLoading}
+                variant={selectedSource === 'youtube' ? 'secondary' : 'ghost'}
+                className={`w-full ${sidebarCollapsed ? 'px-3' : 'justify-start'} text-sm`}
+                onClick={() => setSelectedSource('youtube')}
               >
-                Next
+                <div className="flex items-center space-x-3">
+                  <Youtube className="w-4 h-4 text-red-500 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span>YouTube</span>
+                      <span className="ml-auto text-xs text-gray-400">({sourceCounts.youtube})</span>
+                    </>
+                  )}
+                </div>
+              </Button>
+
+              <Button
+                variant={selectedSource === 'linkedin' ? 'secondary' : 'ghost'}
+                className={`w-full ${sidebarCollapsed ? 'px-3' : 'justify-start'} text-sm`}
+                onClick={() => setSelectedSource('linkedin')}
+              >
+                <div className="flex items-center space-x-3">
+                  <Linkedin className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span>LinkedIn</span>
+                      <span className="ml-auto text-xs text-gray-400">({sourceCounts.linkedin})</span>
+                    </>
+                  )}
+                </div>
+              </Button>
+
+              <Button
+                variant={selectedSource === 'website' ? 'secondary' : 'ghost'}
+                className={`w-full ${sidebarCollapsed ? 'px-3' : 'justify-start'} text-sm`}
+                onClick={() => setSelectedSource('website')}
+              >
+                <div className="flex items-center space-x-3">
+                  <Globe className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span>Websites</span>
+                      <span className="ml-auto text-xs text-gray-400">({sourceCounts.website})</span>
+                    </>
+                  )}
+                </div>
+              </Button>
+
+              <Button
+                variant={selectedSource === 'twitter' ? 'secondary' : 'ghost'}
+                className={`w-full ${sidebarCollapsed ? 'px-3' : 'justify-start'} text-sm`}
+                onClick={() => setSelectedSource('twitter')}
+              >
+                <div className="flex items-center space-x-3">
+                  <Twitter className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span>X</span>
+                      <span className="ml-auto text-xs text-gray-400">({sourceCounts.twitter})</span>
+                    </>
+                  )}
+                </div>
               </Button>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Summary Modal */}
-      <SummaryModal
-        isOpen={modal.isOpen}
-        onClose={() => setModal({ isOpen: false, mode: 'view', summary: null })}
-        summary={modal.summary}
-        mode={modal.mode}
-        onSave={handleSaveSummary}
-        isLoading={actionLoading}
-      />
-
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm.isOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-black/50 transition-opacity" />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative w-full max-w-md rounded-lg bg-background shadow-xl">
-              <div className="p-6">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                    <AlertCircle className="h-6 w-6 text-red-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-medium">
-                      {deleteConfirm.isBulk ? 'Delete Multiple Summaries' : 'Delete Summary'}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {deleteConfirm.isBulk
-                        ? `Are you sure you want to delete ${selectedSummaries.length} summaries? This action cannot be undone.`
-                        : 'Are you sure you want to delete this summary? This action cannot be undone.'
-                      }
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-end space-x-3">
+          {/* Topics */}
+          {!sidebarCollapsed && allTags.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3">Topics</h3>
+              <div className="space-y-1">
+                {allTags.map((tag) => (
                   <Button
-                    variant="outline"
-                    onClick={() => setDeleteConfirm({ isOpen: false, summary: null, isBulk: false })}
-                    disabled={actionLoading}
+                    key={tag}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => setSearchQuery(tag)}
                   >
-                    Cancel
+                    <span className="text-orange-500 mr-2">#</span>
+                    {tag}
                   </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={confirmDelete}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading && <Spinner size="sm" className="mr-2" />}
-                    Delete
-                  </Button>
-                </div>
+                ))}
               </div>
             </div>
+          )}
+        </div>
+
+        {/* User */}
+        {!sidebarCollapsed && user && (
+          <div className="p-4 border-t border-gray-800">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center">
+                <span className="text-white text-sm font-medium">
+                  {user.name ? user.name[0].toUpperCase() : user.email[0].toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{user.name || user.email}</p>
+                <p className="text-xs text-gray-400">{user.plan} Plan</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 text-xs"
+            >
+              <svg className="w-3 h-3 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sign Out
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-800">
+          <div className="max-w-md">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-gray-800 border-gray-700 text-white placeholder-gray-400 focus:border-orange-500"
+              />
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Content Grid */}
+        <div className="flex-1 p-6 overflow-auto">
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold mb-2">
+              {selectedSource === 'all' ? 'All Knuggets' : 
+               selectedSource === 'youtube' ? 'YouTube' :
+               selectedSource === 'linkedin' ? 'LinkedIn' :
+               selectedSource === 'website' ? 'Websites' : 'X'}
+            </h1>
+            <p className="text-gray-400 text-sm">
+              {filteredItems.length} items
+              {searchQuery && ` matching "${searchQuery}"`}
+            </p>
+          </div>
+
+          {/* Loading State */}
+          {(summariesLoading || linkedinLoading) && (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+            </div>
+          )}
+
+          {/* Items Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredItems.map((item) => {
+              const IconComponent = sourceIcons[item.type]
+              const iconColor = sourceColors[item.type]
+              
+              return (
+                <Card
+                  key={item.id}
+                  className="bg-gray-800 border-gray-700 hover:border-gray-600 cursor-pointer transition-all duration-200 hover:shadow-lg"
+                  onClick={() => handleItemClick(item)}
+                >
+                  <CardContent className="p-4">
+                    {/* Source Icon & Date */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <IconComponent className={`w-4 h-4 ${iconColor}`} />
+                        <span className="text-xs text-gray-400">{item.source}</span>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {formatRelativeTime(item.createdAt)}
+                      </span>
+                    </div>
+
+                    {/* Thumbnail for YouTube */}
+                    {item.type === 'youtube' && item.thumbnail && (
+                      <div className="mb-3 rounded-lg overflow-hidden">
+                        <img
+                          src={item.thumbnail}
+                          alt={item.title}
+                          className="w-full h-32 object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* Title */}
+                    <h3 className="text-white font-medium mb-2 line-clamp-2 leading-tight">
+                      {item.title}
+                    </h3>
+
+                    {/* Content preview for LinkedIn */}
+                    {item.type === 'linkedin' && item.content && (
+                      <p className="text-gray-400 text-sm mb-3 line-clamp-2">
+                        {item.content}
+                      </p>
+                    )}
+
+                    {/* Author for LinkedIn */}
+                    {item.author && (
+                      <p className="text-gray-500 text-xs mb-3">by {item.author}</p>
+                    )}
+
+                    {/* Tags */}
+                    {item.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {item.tags.slice(0, 3).map((tag, index) => (
+                          <Badge
+                            key={index}
+                            variant="outline"
+                            className="text-xs border-gray-600 text-gray-300 bg-gray-700/50"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                        {item.tags.length > 3 && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs border-gray-600 text-gray-400 bg-gray-700/50"
+                          >
+                            +{item.tags.length - 3}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Empty State */}
+          {!summariesLoading && !linkedinLoading && filteredItems.length === 0 && (
+            <div className="text-center py-12">
+              <div className="text-gray-400 mb-4">
+                <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">No knuggets found</p>
+                <p className="text-sm">
+                  {searchQuery ? `No results for "${searchQuery}"` : 'Start by adding some content'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
