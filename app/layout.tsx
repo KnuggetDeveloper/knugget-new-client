@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/contexts/auth-context";
+import { MainLayout } from "@/components/layout/main-layout";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -85,7 +86,6 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        {/* <link rel="manifest" href="/manifest.json" /> */}
 
         {/* Theme Color */}
         <meta name="theme-color" content="#f97316" />
@@ -118,9 +118,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
         suppressHydrationWarning={true}
       >
         <AuthProvider>
-          <div className="relative flex min-h-screen flex-col bg-gray-950">
-            <main className="flex-1">{children}</main>
-          </div>
+          <MainLayout>
+            {children}
+          </MainLayout>
         </AuthProvider>
 
         {/* Development helpers */}
