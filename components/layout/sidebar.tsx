@@ -1,8 +1,8 @@
-// components/layout/sidebar.tsx
+// components/layout/sidebar.tsx - FIXED HOVER AND ACTIVE STATE
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import {
   Youtube,
@@ -26,7 +26,11 @@ export function GlobalSidebar() {
   const { user, isAuthenticated, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Get current filter from URL
+  const currentFilter = searchParams.get("filter");
 
   // Get data for counts
   const { summaries } = useSummaries({ limit: 1000 });
@@ -52,7 +56,7 @@ export function GlobalSidebar() {
     }
   };
 
-  // Navigation items with counts
+  // Navigation items with filter values
   const navigationItems = [
     {
       name: "All Knuggets",
@@ -61,47 +65,53 @@ export function GlobalSidebar() {
       count: (summaries?.length || 0) + (linkedinPosts?.length || 0),
       color: "text-orange-500",
       bgColor: "bg-orange-500",
+      filter: null, // No filter = all content
     },
     {
       name: "YouTube",
-      href: "/summaries",
+      href: "/dashboard?filter=youtube",
       icon: Youtube,
       count: summaries?.length || 0,
       color: "text-red-500",
       bgColor: "bg-red-500",
+      filter: "youtube",
     },
     {
       name: "LinkedIn",
-      href: "/linkedin-posts",
+      href: "/dashboard?filter=linkedin",
       icon: Linkedin,
       count: linkedinPosts?.length || 0,
       color: "text-blue-500",
       bgColor: "bg-blue-500",
+      filter: "linkedin",
     },
     {
       name: "Websites",
-      href: "/websites",
+      href: "/dashboard?filter=website",
       icon: Globe,
-      count: 0, // Add when website summaries are implemented
+      count: 0,
       color: "text-green-500",
       bgColor: "bg-green-500",
+      filter: "website",
     },
     {
       name: "X",
-      href: "/twitter",
+      href: "/dashboard?filter=twitter",
       icon: Twitter,
-      count: 0, // Add when Twitter posts are implemented
+      count: 0,
       color: "text-blue-400",
       bgColor: "bg-blue-400",
+      filter: "twitter",
     },
   ];
 
-  // Check if current route is active
-  const isActivePath = (href: string) => {
-    if (href === "/dashboard") {
-      return pathname === "/dashboard";
-    }
-    return pathname.startsWith(href);
+  // FIXED: Improved active path detection
+  const isActivePath = (item: typeof navigationItems[0]) => {
+    // Check if we're on dashboard page
+    if (pathname !== "/dashboard") return false;
+    
+    // Compare the filter values
+    return currentFilter === item.filter;
   };
 
   // Get all unique tags for the topics section
@@ -111,6 +121,11 @@ export function GlobalSidebar() {
       // Add other content types when available
     ])
   ).slice(0, 20);
+
+  // Handle tag clicks with proper search
+  const handleTagClick = (tag: string) => {
+    router.push(`/dashboard?search=${encodeURIComponent(tag)}`);
+  };
 
   return (
     <div
@@ -152,26 +167,32 @@ export function GlobalSidebar() {
           <div className="space-y-1">
             {navigationItems.map((item) => {
               const Icon = item.icon;
-              const isActive = isActivePath(item.href);
+              const isActive = isActivePath(item);
 
               return (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-gray-800 text-white"
-                      : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                      ? "bg-gray-800 text-white border-l-2 border-orange-500"
+                      : "text-gray-300 hover:bg-gray-800/50 hover:text-white"
                   } ${sidebarCollapsed ? "justify-center" : ""}`}
                 >
-                  <div className="flex items-center space-x-3">
-                    <Icon className={`w-4 h-4 ${item.color} flex-shrink-0`} />
+                  <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-3 w-full'}`}>
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-orange-500' : item.color} flex-shrink-0`} />
                     {!sidebarCollapsed && (
                       <>
-                        <span>{item.name}</span>
-                        <span className="ml-auto text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full">
-                          {item.count}
-                        </span>
+                        <span className="flex-1">{item.name}</span>
+                        {item.count > 0 && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            isActive 
+                              ? 'bg-orange-500/20 text-orange-300' 
+                              : 'bg-gray-700 text-gray-400'
+                          }`}>
+                            {item.count}
+                          </span>
+                        )}
                       </>
                     )}
                   </div>
@@ -192,9 +213,7 @@ export function GlobalSidebar() {
               {allTags.map((tag, index) => (
                 <button
                   key={index}
-                  onClick={() =>
-                    router.push(`/dashboard?search=${encodeURIComponent(tag)}`)
-                  }
+                  onClick={() => handleTagClick(tag)}
                   className="w-full text-left px-3 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
                 >
                   <span className="text-orange-500 mr-2">#</span>

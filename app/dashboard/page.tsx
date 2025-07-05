@@ -1,7 +1,8 @@
+// app/dashboard/page.tsx - UPDATED WITH FILTERING
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useSummaries } from "@/hooks/use-summaries";
@@ -37,9 +38,15 @@ interface KnuggetItem {
 export default function DashboardPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [searchQuery, setSearchQuery] = useState("");
+  // FIXED: Get filter and search from URL parameters
+  const filterParam = searchParams.get("filter");
+  const searchParam = searchParams.get("search") || "";
+
+  const [searchQuery, setSearchQuery] = useState(searchParam);
   const [allItems, setAllItems] = useState<KnuggetItem[]>([]);
+  const [activeFilter, setActiveFilter] = useState<string>(filterParam || "all");
 
   // Fetch data from hooks
   const { summaries, isLoading: summariesLoading } = useSummaries({
@@ -55,6 +62,16 @@ export default function DashboardPage() {
       router.push("/login");
     }
   }, [isAuthenticated, authLoading, router]);
+
+  // FIXED: Update search query when URL parameter changes
+  useEffect(() => {
+    setSearchQuery(searchParam);
+  }, [searchParam]);
+
+  // FIXED: Update active filter when URL parameter changes
+  useEffect(() => {
+    setActiveFilter(filterParam || "all");
+  }, [filterParam]);
 
   // Combine all data sources
   useEffect(() => {
@@ -108,8 +125,14 @@ export default function DashboardPage() {
     setAllItems(items);
   }, [summaries, linkedinPosts]);
 
-  // Filter items based on search
+  // FIXED: Filter items based on search and active filter
   const filteredItems = allItems.filter((item) => {
+    // Apply type filter
+    const matchesFilter = 
+      activeFilter === "all" || 
+      item.type === activeFilter;
+
+    // Apply search filter
     const matchesSearch =
       !searchQuery ||
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -122,10 +145,45 @@ export default function DashboardPage() {
         tag.toLowerCase().includes(searchQuery.toLowerCase())
       );
 
-    return matchesSearch;
+    return matchesFilter && matchesSearch;
   });
 
+  // FIXED: Handle search input with URL updates
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    // Update URL with search parameter
+    const params = new URLSearchParams(searchParams);
+    if (value) {
+      params.set("search", value);
+    } else {
+      params.delete("search");
+    }
+    
+    // Preserve filter parameter
+    if (activeFilter && activeFilter !== "all") {
+      params.set("filter", activeFilter);
+    }
+    
+    router.push(`/dashboard?${params.toString()}`);
+  };
 
+  // FIXED: Get display title based on active filter
+  const getDisplayTitle = () => {
+    switch (activeFilter) {
+      case "youtube":
+        return "YouTube Videos";
+      case "linkedin":
+        return "LinkedIn Posts";
+      case "website":
+        return "Website Articles";
+      case "twitter":
+        return "X Posts";
+      default:
+        return "All Knuggets";
+    }
+  };
 
   const handleItemClick = (item: KnuggetItem) => {
     switch (item.type) {
@@ -170,7 +228,7 @@ export default function DashboardPage() {
                   type="text"
                   placeholder="Search..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={handleSearchChange}
                   className="pl-10 bg-gray-800 border-gray-700 text-white placeholder-gray-400 focus:border-orange-500"
                 />
               </div>
@@ -181,10 +239,11 @@ export default function DashboardPage() {
         {/* Content Grid */}
         <div className="flex-1 p-6 overflow-auto">
           <div className="mb-6">
-            <h1 className="text-2xl font-semibold mb-2">All Knuggets</h1>
+            <h1 className="text-2xl font-semibold mb-2">{getDisplayTitle()}</h1>
             <p className="text-gray-400 text-sm">
               {filteredItems.length} items
               {searchQuery && ` matching "${searchQuery}"`}
+              {activeFilter !== "all" && ` in ${activeFilter}`}
             </p>
           </div>
 
@@ -249,11 +308,23 @@ export default function DashboardPage() {
                   <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p className="text-lg font-medium">No knuggets found</p>
                   <p className="text-sm">
-                    {searchQuery
-                      ? `No results for "${searchQuery}"`
+                    {searchQuery || activeFilter !== "all"
+                      ? `No results for your current filters`
                       : "Start by adding some content"}
                   </p>
                 </div>
+                {(searchQuery || activeFilter !== "all") && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery("");
+                      setActiveFilter("all");
+                      router.push("/dashboard");
+                    }}
+                    className="text-orange-500 hover:text-orange-400 text-sm font-medium"
+                  >
+                    Clear all filters
+                  </button>
+                )}
               </div>
             )}
         </div>

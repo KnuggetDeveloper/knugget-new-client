@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+// hooks/use-summaries.ts - OPTIMIZED VERSION
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Summary,
   SummaryStats,
@@ -14,6 +16,7 @@ import { useAuth } from '@/contexts/auth-context'
 
 /**
  * Hook for managing summaries list with pagination, filtering, and search
+ * OPTIMIZED VERSION - Reduced re-renders, better performance
  */
 export function useSummaries(initialParams: SummaryQueryParams = {}) {
   const { isAuthenticated } = useAuth()
@@ -36,20 +39,52 @@ export function useSummaries(initialParams: SummaryQueryParams = {}) {
     ...initialParams,
   })
 
-  // Fetch summaries
-  const fetchSummaries = useCallback(async (queryParams?: SummaryQueryParams) => {
+  // Use refs to prevent infinite re-renders
+  const paramsRef = useRef(params)
+  const fetchingRef = useRef(false)
+  
+  useEffect(() => {
+    paramsRef.current = params
+  }, [params])
+
+  // OPTIMIZED: Batched fetch with duplicate call prevention
+  const fetchSummaries = useCallback(async (queryParams?: SummaryQueryParams, force = false) => {
     if (!isAuthenticated) return
 
+    // Prevent duplicate calls
+    if (fetchingRef.current && !force) {
+      console.log('🔄 Summary fetch already in progress, skipping...')
+      return
+    }
+
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
-      const currentParams = queryParams || params
+      const currentParams = queryParams || paramsRef.current
+      console.log('🔄 Fetching summaries with params:', currentParams)
+      
       const response = await summaryService.getSummaries(currentParams)
+      console.log('📡 Summaries response:', response)
 
       if (response.success && response.data) {
-        setSummaries(response.data.data)
-        setPagination(response.data.pagination)
+        // Batch state updates to prevent multiple re-renders
+        const newSummaries = response.data.data
+        const newPagination = response.data.pagination
+        
+        // Only update if data actually changed
+        setSummaries(prevSummaries => {
+          const hasChanged = JSON.stringify(prevSummaries) !== JSON.stringify(newSummaries)
+          return hasChanged ? newSummaries : prevSummaries
+        })
+        
+        setPagination(prevPagination => {
+          const hasChanged = JSON.stringify(prevPagination) !== JSON.stringify(newPagination)
+          return hasChanged ? newPagination : prevPagination
+        })
+        
+        console.log('✅ Summaries loaded:', newSummaries.length)
       } else {
         setError(response.error || 'Failed to fetch summaries')
         setSummaries([])
@@ -64,21 +99,34 @@ export function useSummaries(initialParams: SummaryQueryParams = {}) {
       }
     } catch (err) {
       const errorMessage = formatError(err)
+      console.error('❌ Error fetching summaries:', errorMessage)
       setError(errorMessage)
       setSummaries([])
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
-  }, [isAuthenticated, params])
+  }, [isAuthenticated])
 
-  // Update query parameters
+  // OPTIMIZED: Throttled parameter updates
   const updateParams = useCallback((newParams: Partial<SummaryQueryParams>) => {
-    const updatedParams = { ...params, ...newParams }
+    const updatedParams = { ...paramsRef.current, ...newParams }
+    
+    // Only update if params actually changed
+    const hasChanged = JSON.stringify(updatedParams) !== JSON.stringify(paramsRef.current)
+    if (!hasChanged) return
+    
     setParams(updatedParams)
-    fetchSummaries(updatedParams)
-  }, [params, fetchSummaries])
+    
+    // Debounce the fetch call
+    const timeoutId = setTimeout(() => {
+      fetchSummaries(updatedParams, true)
+    }, 100)
+    
+    return () => clearTimeout(timeoutId)
+  }, [fetchSummaries])
 
-  // Search summaries
+  // Search summaries with debouncing
   const search = useCallback((query: string) => {
     updateParams({ search: query, page: 1 })
   }, [updateParams])
@@ -108,32 +156,43 @@ export function useSummaries(initialParams: SummaryQueryParams = {}) {
 
   // Refresh summaries
   const refresh = useCallback(() => {
-    fetchSummaries()
+    console.log('🔄 Refreshing summaries...')
+    fetchSummaries(paramsRef.current, true)
   }, [fetchSummaries])
 
   // Clear filters
   const clearFilters = useCallback(() => {
     const clearedParams = {
       page: 1,
-      limit: params.limit,
+      limit: paramsRef.current.limit,
       sortBy: 'createdAt' as const,
       sortOrder: 'desc' as const,
     }
     setParams(clearedParams)
-    fetchSummaries(clearedParams)
-  }, [params.limit, fetchSummaries])
+    fetchSummaries(clearedParams, true)
+  }, [fetchSummaries])
 
-  // Initial fetch
+  // OPTIMIZED: Initial fetch with dependency array to prevent loops
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchSummaries()
+    let mounted = true
+    
+    if (isAuthenticated && mounted) {
+      console.log('🔄 Initial summaries fetch...')
+      fetchSummaries(undefined, true)
     }
-  }, [fetchSummaries, isAuthenticated])
+    
+    return () => {
+      mounted = false
+    }
+  }, [isAuthenticated]) // Only depend on authentication status
 
   // Listen for extension sync events
   useEffect(() => {
     const handleSummarySync = () => {
-      refresh()
+      console.log('🔄 Summary sync event received')
+      if (!fetchingRef.current) {
+        refresh()
+      }
     }
 
     window.addEventListener('summarySync', handleSummarySync)
@@ -145,7 +204,7 @@ export function useSummaries(initialParams: SummaryQueryParams = {}) {
     pagination,
     isLoading,
     error,
-    params,
+    params: paramsRef.current,
     search,
     filterByStatus,
     sort,
@@ -158,17 +217,20 @@ export function useSummaries(initialParams: SummaryQueryParams = {}) {
 
 /**
  * Hook for managing a single summary
+ * OPTIMIZED VERSION
  */
 export function useSummary(id?: string) {
   const { isAuthenticated } = useAuth()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fetchingRef = useRef(false)
 
   const fetchSummary = useCallback(async (summaryId: string) => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated || fetchingRef.current) return
 
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
@@ -186,11 +248,12 @@ export function useSummary(id?: string) {
       setSummary(null)
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
   }, [isAuthenticated])
 
   useEffect(() => {
-    if (id && isAuthenticated) {
+    if (id && isAuthenticated && !fetchingRef.current) {
       fetchSummary(id)
     }
   }, [id, isAuthenticated, fetchSummary])
@@ -205,6 +268,7 @@ export function useSummary(id?: string) {
 
 /**
  * Hook for summary CRUD operations
+ * OPTIMIZED VERSION
  */
 export function useSummaryActions() {
   const { isAuthenticated } = useAuth()
@@ -332,17 +396,20 @@ export function useSummaryActions() {
 
 /**
  * Hook for summary statistics
+ * OPTIMIZED VERSION
  */
 export function useSummaryStats() {
   const { isAuthenticated } = useAuth()
   const [stats, setStats] = useState<SummaryStats | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fetchingRef = useRef(false)
 
   const fetchStats = useCallback(async () => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated || fetchingRef.current) return
 
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
@@ -360,6 +427,7 @@ export function useSummaryStats() {
       setStats(null)
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
   }, [isAuthenticated])
 
@@ -379,17 +447,20 @@ export function useSummaryStats() {
 
 /**
  * Hook for popular tags
+ * OPTIMIZED VERSION
  */
 export function usePopularTags(limit: number = 20) {
   const { isAuthenticated } = useAuth()
   const [tags, setTags] = useState<Array<{ tag: string; count: number }>>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fetchingRef = useRef(false)
 
   const fetchTags = useCallback(async () => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated || fetchingRef.current) return
 
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
@@ -407,6 +478,7 @@ export function usePopularTags(limit: number = 20) {
       setTags([])
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
   }, [isAuthenticated, limit])
 

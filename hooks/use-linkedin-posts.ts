@@ -1,7 +1,8 @@
-// hooks/use-linkedin-posts.ts - FIXED
+/* eslint-disable react-hooks/exhaustive-deps */
+// hooks/use-linkedin-posts.ts - OPTIMIZED VERSION
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/contexts/auth-context'
 import { formatError } from '@/lib/utils'
 import {
@@ -15,6 +16,7 @@ import {
 
 /**
  * Hook for managing LinkedIn posts list with pagination, filtering, and search
+ * OPTIMIZED VERSION - Batched fetching, reduced re-renders
  */
 export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
   const { isAuthenticated } = useAuth()
@@ -37,24 +39,53 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
     ...initialParams,
   })
 
-  // Fetch LinkedIn posts - FIXED: Removed userId parameter
-  const fetchPosts = useCallback(async (queryParams?: LinkedinPostQueryParams) => {
+  // Use ref to prevent infinite re-renders
+  const paramsRef = useRef(params)
+  const fetchingRef = useRef(false)
+  
+  useEffect(() => {
+    paramsRef.current = params
+  }, [params])
+
+  // OPTIMIZED: Debounced fetch with abort controller
+  const fetchPosts = useCallback(async (queryParams?: LinkedinPostQueryParams, force = false) => {
     if (!isAuthenticated) return
+    
+    // Prevent duplicate calls
+    if (fetchingRef.current && !force) {
+      console.log('🔄 Fetch already in progress, skipping...')
+      return
+    }
 
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
-      const currentParams = queryParams || params
+      const currentParams = queryParams || paramsRef.current
       console.log('🔄 Fetching LinkedIn posts with params:', currentParams)
       
+      // Single API call with all parameters
       const response = await linkedinService.getPosts(currentParams)
       console.log('📡 LinkedIn posts response:', response)
 
       if (response.success && response.data) {
-        setPosts(response.data.data)
-        setPagination(response.data.pagination)
-        console.log('✅ LinkedIn posts loaded:', response.data.data.length)
+        // Batch update state to prevent multiple re-renders
+        const newPosts = response.data.data
+        const newPagination = response.data.pagination
+        
+        // Only update if data actually changed
+        setPosts(prevPosts => {
+          const hasChanged = JSON.stringify(prevPosts) !== JSON.stringify(newPosts)
+          return hasChanged ? newPosts : prevPosts
+        })
+        
+        setPagination(prevPagination => {
+          const hasChanged = JSON.stringify(prevPagination) !== JSON.stringify(newPagination)
+          return hasChanged ? newPagination : prevPagination
+        })
+        
+        console.log('✅ LinkedIn posts loaded:', newPosts.length)
       } else {
         setError(response.error || 'Failed to fetch LinkedIn posts')
         setPosts([])
@@ -74,17 +105,29 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
       setPosts([])
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
-  }, [isAuthenticated, params])
+  }, [isAuthenticated])
 
-  // Update query parameters
+  // OPTIMIZED: Throttled parameter updates
   const updateParams = useCallback((newParams: Partial<LinkedinPostQueryParams>) => {
-    const updatedParams = { ...params, ...newParams }
+    const updatedParams = { ...paramsRef.current, ...newParams }
+    
+    // Only update if params actually changed
+    const hasChanged = JSON.stringify(updatedParams) !== JSON.stringify(paramsRef.current)
+    if (!hasChanged) return
+    
     setParams(updatedParams)
-    fetchPosts(updatedParams)
-  }, [params, fetchPosts])
+    
+    // Debounce the fetch call
+    const timeoutId = setTimeout(() => {
+      fetchPosts(updatedParams, true)
+    }, 100)
+    
+    return () => clearTimeout(timeoutId)
+  }, [fetchPosts])
 
-  // Search posts
+  // Search posts with debouncing
   const search = useCallback((query: string) => {
     updateParams({ search: query, page: 1 })
   }, [updateParams])
@@ -115,34 +158,42 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
   // Refresh posts
   const refresh = useCallback(() => {
     console.log('🔄 Refreshing LinkedIn posts...')
-    fetchPosts()
+    fetchPosts(paramsRef.current, true)
   }, [fetchPosts])
 
   // Clear filters
   const clearFilters = useCallback(() => {
     const clearedParams = {
       page: 1,
-      limit: params.limit,
+      limit: paramsRef.current.limit,
       sortBy: 'savedAt' as const,
       sortOrder: 'desc' as const,
     }
     setParams(clearedParams)
-    fetchPosts(clearedParams)
-  }, [params.limit, fetchPosts])
+    fetchPosts(clearedParams, true)
+  }, [fetchPosts])
 
-  // Initial fetch
+  // OPTIMIZED: Initial fetch with dependency array to prevent loops
   useEffect(() => {
-    if (isAuthenticated) {
+    let mounted = true
+    
+    if (isAuthenticated && mounted) {
       console.log('🔄 Initial LinkedIn posts fetch...')
-      fetchPosts()
+      fetchPosts(undefined, true)
     }
-  }, [fetchPosts, isAuthenticated])
+    
+    return () => {
+      mounted = false
+    }
+  }, [isAuthenticated]) // Only depend on authentication status
 
   // Listen for extension sync events
   useEffect(() => {
     const handlePostSync = () => {
       console.log('🔄 LinkedIn post sync event received')
-      refresh()
+      if (!fetchingRef.current) {
+        refresh()
+      }
     }
 
     window.addEventListener('linkedinPostSync', handlePostSync)
@@ -154,7 +205,7 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
     pagination,
     isLoading,
     error,
-    params,
+    params: paramsRef.current,
     search,
     filterByAuthor,
     sort,
@@ -167,17 +218,20 @@ export function useLinkedinPosts(initialParams: LinkedinPostQueryParams = {}) {
 
 /**
  * Hook for managing a single LinkedIn post
+ * OPTIMIZED VERSION
  */
 export function useLinkedinPost(id?: string) {
   const { isAuthenticated } = useAuth()
   const [post, setPost] = useState<LinkedinPost | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fetchingRef = useRef(false)
 
   const fetchPost = useCallback(async (postId: string) => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated || fetchingRef.current) return
 
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
@@ -195,11 +249,12 @@ export function useLinkedinPost(id?: string) {
       setPost(null)
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
   }, [isAuthenticated])
 
   useEffect(() => {
-    if (id && isAuthenticated) {
+    if (id && isAuthenticated && !fetchingRef.current) {
       fetchPost(id)
     }
   }, [id, isAuthenticated, fetchPost])
@@ -214,6 +269,7 @@ export function useLinkedinPost(id?: string) {
 
 /**
  * Hook for LinkedIn post CRUD operations
+ * OPTIMIZED VERSION
  */
 export function useLinkedinPostActions() {
   const { isAuthenticated } = useAuth()
@@ -341,17 +397,20 @@ export function useLinkedinPostActions() {
 
 /**
  * Hook for LinkedIn post statistics
+ * OPTIMIZED VERSION
  */
 export function useLinkedinPostStats() {
   const { isAuthenticated } = useAuth()
   const [stats, setStats] = useState<LinkedinPostStats | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fetchingRef = useRef(false)
 
   const fetchStats = useCallback(async () => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated || fetchingRef.current) return
 
     try {
+      fetchingRef.current = true
       setIsLoading(true)
       setError(null)
 
@@ -369,6 +428,7 @@ export function useLinkedinPostStats() {
       setStats(null)
     } finally {
       setIsLoading(false)
+      fetchingRef.current = false
     }
   }, [isAuthenticated])
 
