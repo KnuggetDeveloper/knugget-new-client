@@ -1,7 +1,6 @@
-// app/dashboard/page.tsx - UPDATED WITH FILTERING
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -35,7 +34,8 @@ interface KnuggetItem {
   summary?: string;
 }
 
-export default function DashboardPage() {
+// Separate component that uses useSearchParams
+function DashboardContent() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,7 +46,9 @@ export default function DashboardPage() {
 
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [allItems, setAllItems] = useState<KnuggetItem[]>([]);
-  const [activeFilter, setActiveFilter] = useState<string>(filterParam || "all");
+  const [activeFilter, setActiveFilter] = useState<string>(
+    filterParam || "all"
+  );
 
   // Fetch data from hooks
   const { summaries, isLoading: summariesLoading } = useSummaries({
@@ -128,9 +130,7 @@ export default function DashboardPage() {
   // FIXED: Filter items based on search and active filter
   const filteredItems = allItems.filter((item) => {
     // Apply type filter
-    const matchesFilter = 
-      activeFilter === "all" || 
-      item.type === activeFilter;
+    const matchesFilter = activeFilter === "all" || item.type === activeFilter;
 
     // Apply search filter
     const matchesSearch =
@@ -152,7 +152,7 @@ export default function DashboardPage() {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
-    
+
     // Update URL with search parameter
     const params = new URLSearchParams(searchParams);
     if (value) {
@@ -160,12 +160,12 @@ export default function DashboardPage() {
     } else {
       params.delete("search");
     }
-    
+
     // Preserve filter parameter
     if (activeFilter && activeFilter !== "all") {
       params.set("filter", activeFilter);
     }
-    
+
     router.push(`/dashboard?${params.toString()}`);
   };
 
@@ -330,5 +330,23 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading fallback component
+function DashboardLoading() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-950">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+    </div>
+  );
+}
+
+// Main dashboard page with Suspense boundary
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<DashboardLoading />}>
+      <DashboardContent />
+    </Suspense>
   );
 }
