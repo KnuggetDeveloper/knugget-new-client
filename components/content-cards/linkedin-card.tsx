@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
-import React, { useRef, useEffect, useState } from 'react';
-import { Linkedin, User } from 'lucide-react';
-import { BaseCard, CardHeader, TagsContainer } from './base-card';
+import React, { useRef, useEffect, useState } from "react";
+import { Linkedin, User } from "lucide-react";
+import { BaseCard, CardHeader, TagsContainer } from "./base-card";
 
 interface LinkedInCardData {
   id: string;
@@ -20,7 +20,10 @@ interface LinkedInCardProps {
   onCardClick?: (data: LinkedInCardData) => void;
 }
 
-export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick }) => {
+export const LinkedInCard: React.FC<LinkedInCardProps> = ({
+  data,
+  onCardClick,
+}) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -30,39 +33,45 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-GB', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric' 
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
     });
   };
 
   // Calculate optimal text display based on available space
   useEffect(() => {
     const calculateOptimalLines = () => {
-      if (cardRef.current && headerRef.current && titleRef.current && authorRef.current) {
+      if (
+        cardRef.current &&
+        headerRef.current &&
+        titleRef.current &&
+        authorRef.current
+      ) {
         const cardHeight = cardRef.current.offsetHeight;
         const headerHeight = headerRef.current.offsetHeight;
         const titleHeight = titleRef.current.offsetHeight;
         const authorHeight = authorRef.current.offsetHeight;
-        
+
         // Estimate tags height (if they exist)
         const tagsHeight = data.tags.length > 0 ? 45 : 0;
-        
+
         // Calculate margins and padding (approximately 32px total)
         const margins = 32;
-        
+
         // Calculate available height for content text
-        const usedHeight = headerHeight + titleHeight + authorHeight + tagsHeight + margins;
+        const usedHeight =
+          headerHeight + titleHeight + authorHeight + tagsHeight + margins;
         const availableHeight = cardHeight - usedHeight;
-        
+
         // Line height for text-sm leading-relaxed is approximately 20px
         const lineHeight = 20;
         const maxPossibleLines = Math.floor(availableHeight / lineHeight);
-        
+
         // Set reasonable bounds: minimum 3 lines, maximum 12 lines
         const optimalLines = Math.max(3, Math.min(maxPossibleLines, 12));
-        
+
         setDisplayLines(optimalLines);
       }
     };
@@ -75,7 +84,7 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
       setTimeout(calculateOptimalLines, 150);
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
 
     // Use ResizeObserver for more accurate detection
     const resizeObserver = new ResizeObserver(() => {
@@ -88,7 +97,7 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
     };
   }, [data.tags.length, data.title, data.content]);
@@ -99,10 +108,13 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
 
   return (
     <div ref={cardRef} className="h-full">
-      <BaseCard onClick={handleCardClick}>
+      <BaseCard
+        onClick={handleCardClick}
+        style={{ backgroundColor: "#151515" }}
+      >
         {/* Header */}
         <div ref={headerRef}>
-          <CardHeader 
+          <CardHeader
             iconComponent={<Linkedin className="w-4 h-4 text-blue-500" />}
             sourceName="LinkedIn"
             date={formatDate(data.createdAt)}
@@ -110,11 +122,13 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
         </div>
 
         {/* Title */}
-        <div ref={titleRef}>
+        {/* <div ref={titleRef}>
           <h3 className="text-white font-bold text-base mb-4 line-clamp-2 leading-tight">
-            {data.title || data.content.slice(0, 80) + (data.content.length > 80 ? '...' : '')}
+            {data.title ||
+              data.content.slice(0, 80) +
+                (data.content.length > 80 ? "..." : "")}
           </h3>
-        </div>
+        </div> */}
 
         {/* Author Info */}
         <div ref={authorRef} className="mb-4">
@@ -128,9 +142,9 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
                     className="w-full h-full object-cover"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
+                      target.style.display = "none";
                       const fallback = target.nextElementSibling as HTMLElement;
-                      if (fallback) fallback.style.display = 'flex';
+                      if (fallback) fallback.style.display = "flex";
                     }}
                   />
                   <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-700">
@@ -144,7 +158,9 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-white text-sm font-semibold line-clamp-1">{data.author}</p>
+              <p className="text-white text-sm font-semibold line-clamp-1">
+                {data.author}
+              </p>
               {data.role && (
                 <p className="text-gray-400 text-xs leading-tight mt-1 line-clamp-2">
                   {data.role}
@@ -157,17 +173,17 @@ export const LinkedInCard: React.FC<LinkedInCardProps> = ({ data, onCardClick })
         {/* Content Preview - Expands to fill remaining space */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex-1">
-            <p 
+            <p
               className="text-gray-300 text-sm leading-relaxed"
               style={{
-                display: '-webkit-box',
+                display: "-webkit-box",
                 WebkitLineClamp: displayLines,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                lineHeight: '1.25rem',
-                wordBreak: 'break-word',
-                overflowWrap: 'break-word',
-                marginBottom: data.tags.length > 0 ? '1rem' : '0'
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+                lineHeight: "1.25rem",
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
+                marginBottom: data.tags.length > 0 ? "1rem" : "0",
               }}
             >
               {data.content}

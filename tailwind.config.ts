@@ -70,6 +70,16 @@ module.exports = {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
+  			},
+  			sidebar: {
+  				DEFAULT: 'hsl(var(--sidebar-background))',
+  				foreground: 'hsl(var(--sidebar-foreground))',
+  				primary: 'hsl(var(--sidebar-primary))',
+  				'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+  				accent: 'hsl(var(--sidebar-accent))',
+  				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+  				border: 'hsl(var(--sidebar-border))',
+  				ring: 'hsl(var(--sidebar-ring))'
   			}
   		},
   		borderRadius: {
@@ -138,7 +148,7 @@ module.exports = {
   					boxShadow: '0 0 0 10px rgba(255, 107, 53, 0)'
   				}
   			},
-  			'shimmer': {
+  			shimmer: {
   				from: {
   					backgroundPosition: '200% 0'
   				},
@@ -155,7 +165,7 @@ module.exports = {
   			'slide-in-from-right': 'slide-in-from-right 0.3s ease-out',
   			'slide-out-to-right': 'slide-out-to-right 0.3s ease-out',
   			'pulse-glow': 'pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-  			'shimmer': 'shimmer 2s linear infinite'
+  			shimmer: 'shimmer 2s linear infinite'
   		},
   		fontFamily: {
   			sans: [

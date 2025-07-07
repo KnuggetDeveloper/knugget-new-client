@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 // components/layout/sidebar.tsx - FIXED HOVER AND ACTIVE STATE
 "use client";
 
@@ -13,8 +14,7 @@ import {
   X,
   BarChart3,
   LogOut,
-  User,
-  Settings,
+
   Tag,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -63,8 +63,8 @@ export function GlobalSidebar() {
       href: "/dashboard",
       icon: BarChart3,
       count: (summaries?.length || 0) + (linkedinPosts?.length || 0),
-      color: "text-orange-500",
-      bgColor: "bg-orange-500",
+      color: "text-white",
+      bgColor: "bg-white",
       filter: null, // No filter = all content
     },
     {
@@ -72,8 +72,8 @@ export function GlobalSidebar() {
       href: "/dashboard?filter=youtube",
       icon: Youtube,
       count: summaries?.length || 0,
-      color: "text-red-500",
-      bgColor: "bg-red-500",
+      color: "text-white",
+      bgColor: "bg-white",
       filter: "youtube",
     },
     {
@@ -81,8 +81,8 @@ export function GlobalSidebar() {
       href: "/dashboard?filter=linkedin",
       icon: Linkedin,
       count: linkedinPosts?.length || 0,
-      color: "text-blue-500",
-      bgColor: "bg-blue-500",
+      color: "text-white",
+      bgColor: "bg-white",
       filter: "linkedin",
     },
     {
@@ -90,8 +90,8 @@ export function GlobalSidebar() {
       href: "/dashboard?filter=website",
       icon: Globe,
       count: 0,
-      color: "text-green-500",
-      bgColor: "bg-green-500",
+      color: "text-white",
+      bgColor: "bg-white",
       filter: "website",
     },
     {
@@ -99,17 +99,17 @@ export function GlobalSidebar() {
       href: "/dashboard?filter=twitter",
       icon: Twitter,
       count: 0,
-      color: "text-blue-400",
-      bgColor: "bg-blue-400",
+      color: "text-white",
+      bgColor: "bg-white",
       filter: "twitter",
     },
   ];
 
   // FIXED: Improved active path detection
-  const isActivePath = (item: typeof navigationItems[0]) => {
+  const isActivePath = (item: (typeof navigationItems)[0]) => {
     // Check if we're on dashboard page
     if (pathname !== "/dashboard") return false;
-    
+
     // Compare the filter values
     return currentFilter === item.filter;
   };
@@ -129,15 +129,15 @@ export function GlobalSidebar() {
 
   return (
     <div
-      className={`${sidebarCollapsed ? "w-16" : "w-64"} bg-gray-900 border-r border-gray-800 flex flex-col transition-all duration-300 fixed left-0 top-0 h-full z-50`}
+      className={`${sidebarCollapsed ? "w-16" : "w-64"} bg-[#151515] flex flex-col transition-all duration-300 fixed left-0 top-0 h-full z-50`}
     >
       {/* Header */}
       <div className="p-4 border-b border-gray-800">
         <div className="flex items-center justify-between">
           {!sidebarCollapsed && (
             <Link href="/dashboard" className="flex items-center space-x-2">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">K</span>
+              <div className="h-10 w-10 rounded-lg bg-gradient-to-r flex items-center justify-center">
+                <img src="/logo.png" alt="Knugget" className="h-10 w-10" />
               </div>
               <span className="text-lg font-semibold text-white">Knugget</span>
             </Link>
@@ -175,21 +175,27 @@ export function GlobalSidebar() {
                   href={item.href}
                   className={`flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-gray-800 text-white border-l-2 border-orange-500"
+                      ? "bg-gray-800 text-orange-500 border-l-2 border-orange-500"
                       : "text-gray-300 hover:bg-gray-800/50 hover:text-white"
                   } ${sidebarCollapsed ? "justify-center" : ""}`}
                 >
-                  <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-3 w-full'}`}>
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-orange-500' : item.color} flex-shrink-0`} />
+                  <div
+                    className={`flex items-center ${sidebarCollapsed ? "" : "space-x-3 w-full"}`}
+                  >
+                    <Icon
+                      className={`w-4 h-4 ${isActive ? "text-orange-500" : item.color} flex-shrink-0`}
+                    />
                     {!sidebarCollapsed && (
                       <>
                         <span className="flex-1">{item.name}</span>
                         {item.count > 0 && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            isActive 
-                              ? 'bg-orange-500/20 text-orange-300' 
-                              : 'bg-gray-700 text-gray-400'
-                          }`}>
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              isActive
+                                ? "bg-orange-500/20 text-orange-300"
+                                : "bg-gray-700 text-gray-400"
+                            }`}
+                          >
                             {item.count}
                           </span>
                         )}
@@ -245,24 +251,6 @@ export function GlobalSidebar() {
           </div>
 
           <div className="space-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push("/profile")}
-              className="w-full justify-start text-gray-300 hover:text-white hover:bg-gray-800 text-xs"
-            >
-              <User className="w-3 h-3 mr-2" />
-              Profile
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push("/settings")}
-              className="w-full justify-start text-gray-300 hover:text-white hover:bg-gray-800 text-xs"
-            >
-              <Settings className="w-3 h-3 mr-2" />
-              Settings
-            </Button>
             <Button
               variant="ghost"
               size="sm"

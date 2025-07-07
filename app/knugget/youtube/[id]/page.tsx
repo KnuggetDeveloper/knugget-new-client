@@ -108,7 +108,7 @@ export default function YouTubeDetailPage({ params }: YouTubeDetailPageProps) {
 
   // Success state - renders real data from API
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-[#151515] text-white">
       {/* Header with Back Button */}
       <div className="p-6">
         <Button
@@ -239,7 +239,7 @@ export default function YouTubeDetailPage({ params }: YouTubeDetailPageProps) {
           </div>
 
           {/* Content Area */}
-          <div className="bg-gray-900 rounded-lg p-6">
+          <div className="bg-[#313130] rounded-lg p-6">
             {activeTab === "summary" ? (
               <div>
                 <h2 className="text-lg font-semibold text-white mb-4">

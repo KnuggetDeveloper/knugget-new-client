@@ -8,14 +8,9 @@ import {
   ExternalLink,
   Linkedin,
   User,
-  Heart,
-  MessageCircle,
-  Share,
 } from "lucide-react";
 import { useLinkedinPost } from "@/hooks/use-linkedin-posts";
 import { Button } from "@/components/ui/button";
-// import { Badge } from '@/components/ui/additional'
-import { formatRelativeTime } from "@/lib/utils";
 
 interface LinkedInDetailPageProps {
   params: Promise<{ id: string }>;
@@ -47,11 +42,31 @@ export default function LinkedInDetailPage({
     }
   };
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', { 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric' 
+    });
+  };
+
+  // Extract tags from content (assuming hashtags in the content)
+  const extractTags = (content: string) => {
+    const hashtagRegex = /#\w+/g;
+    const matches = content.match(hashtagRegex);
+    return matches || [];
+  };
+
   if (isLoading || !resolvedParams) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-black text-white">
         <div className="p-6">
-          <Button variant="ghost" onClick={handleBack} className="mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={handleBack} 
+            className="mb-6 text-gray-400 hover:text-white"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
@@ -65,9 +80,13 @@ export default function LinkedInDetailPage({
 
   if (error || !post) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-[#151515] text-white">
         <div className="p-6">
-          <Button variant="ghost" onClick={handleBack} className="mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={handleBack} 
+            className="mb-6 text-gray-400 hover:text-white"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
@@ -80,165 +99,89 @@ export default function LinkedInDetailPage({
     );
   }
 
+  const tags = extractTags(post.content);
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-4xl mx-auto p-6">
-        {/* Header */}
-        <div className="mb-6">
-          <Button variant="ghost" onClick={handleBack} className="mb-4">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
-        </div>
+    <div className="min-h-screen bg-black text-white">
+      {/* Header with Back Button */}
+      <div className="p-6">
+        <Button
+          variant="ghost"
+          onClick={handleBack}
+          className="mb-6 text-gray-400 hover:text-white"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back
+        </Button>
 
-        <div className="bg-gray-800 rounded-lg border border-gray-700">
-          <div className="p-6">
-            {/* Author Header */}
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
-                  {post.metadata?.authorImage ? (
-                    <img
-                      src={String(post.metadata.authorImage)}
-                      alt={post.author}
-                      className="w-12 h-12 rounded-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-6 h-6 text-white" />
-                  )}
-                </div>
-                <div>
-                  <h1 className="text-lg font-semibold">{post.author}</h1>
-                  {post.metadata && Boolean(post.metadata.authorAbout) && (
-                    <p className="text-sm text-gray-400 line-clamp-1">
-                      {String(post.metadata.authorAbout)}
-                    </p>
-                  )}
-                  <div className="flex items-center space-x-2 mt-1">
-                    <Linkedin className="w-4 h-4 text-blue-500" />
-                    <span className="text-xs text-gray-400">LinkedIn</span>
-                    <span className="text-xs text-gray-500">•</span>
-                    <span className="text-xs text-gray-400">
-                      {formatRelativeTime(post.savedAt)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenPost}
-                className="border-gray-600 text-gray-300 hover:bg-gray-700"
-              >
-                <ExternalLink className="w-3 h-3 mr-1" />
-                LinkedIn Post Link
-              </Button>
+        {/* Main Content Container */}
+        <div className="max-w-4xl mx-auto">
+          {/* Top Row Header: LinkedIn + Date */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center space-x-2">
+              <Linkedin className="w-5 h-5 text-blue-500" />
+              <span className="text-white font-medium">LinkedIn</span>
             </div>
-
-            {/* Post Title */}
-            {post.title && (
-              <h2 className="text-xl font-semibold mb-4">{post.title}</h2>
-            )}
-
-            {/* Post Content */}
-            <div className="mb-6">
-              <div className="prose prose-invert prose-sm max-w-none">
-                <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">
-                  {post.content}
-                </p>
-              </div>
-            </div>
-
-            {/* Engagement Stats */}
-            {post.engagement && (
-              <div className="flex items-center space-x-6 py-4 border-t border-gray-700">
-                <div className="text-sm text-gray-400">
-                  <span className="font-medium">Engagement:</span>
-                </div>
-                {post.engagement.likes !== undefined && (
-                  <div className="flex items-center space-x-2">
-                    <Heart className="w-4 h-4 text-red-500" />
-                    <span className="text-sm text-gray-300">
-                      {post.engagement.likes}
-                    </span>
-                  </div>
-                )}
-                {post.engagement.comments !== undefined && (
-                  <div className="flex items-center space-x-2">
-                    <MessageCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm text-gray-300">
-                      {post.engagement.comments}
-                    </span>
-                  </div>
-                )}
-                {post.engagement.shares !== undefined && (
-                  <div className="flex items-center space-x-2">
-                    <Share className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-300">
-                      {post.engagement.shares}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Metadata */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-gray-700">
-              <div>
-                <h3 className="text-sm font-medium text-orange-400 mb-3">
-                  Source Information
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Platform:</span>
-                    <span className="text-gray-300">{post.platform}</span>
-                  </div>
-                  {post.metadata?.source && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Source:</span>
-                      <span className="text-gray-300">
-                        {String(post.metadata.source)}
-                      </span>
-                    </div>
-                  )}
-                  {post.metadata?.timestamp && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Captured:</span>
-                      <span className="text-gray-300">
-                        {new Date(post.metadata.timestamp).toLocaleDateString()}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium text-orange-400 mb-3">
-                  Post Details
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Post ID:</span>
-                    <span className="text-gray-300 font-mono text-xs bg-gray-700 px-2 py-1 rounded">
-                      {post.id.slice(-8)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Characters:</span>
-                    <span className="text-gray-300">{post.content.length}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Saved:</span>
-                    <span className="text-gray-300">
-                      {new Date(post.savedAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            <div className="text-gray-400 text-sm">
+              {formatDate(post.savedAt)}
             </div>
           </div>
-        </div>
+
+          {/* Author Section */}
+          <div className="flex items-center space-x-4 mb-6">
+            <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center overflow-hidden">
+              {post.metadata?.authorImage ? (
+                <img
+                  src={String(post.metadata.authorImage)}
+                  alt={post.author}
+                  className="w-16 h-16 rounded-full object-cover"
+                />
+              ) : (
+                <User className="w-8 h-8 text-white" />
+              )}
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white">{post.author}</h1>
+              {post.metadata && Boolean(post.metadata.authorAbout) && (
+                <p className="text-gray-400 text-sm">
+                  {String(post.metadata.authorAbout)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* LinkedIn Post Link */}
+          <div className="mb-6">
+            <button
+              onClick={handleOpenPost}
+              className="flex items-center space-x-2 text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              <span className="text-sm">LinkedIn Post Link</span>
+              <ExternalLink className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-6">
+              {tags.map((tag, index) => (
+                <span
+                  key={index}
+                  className="px-3 py-1 border border-yellow-500 text-yellow-500 rounded-full text-sm"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Content Box */}
+          <div className="bg-[#313130] rounded-lg p-6">
+            <div className="text-gray-300 leading-relaxed whitespace-pre-wrap">
+              {post.content}
+            </div>
+          </div>
+        </div>  
       </div>
     </div>
   );
